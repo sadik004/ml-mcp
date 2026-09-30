@@ -33,19 +33,31 @@ class CalibrationReportDTO(BaseDTO):
     """Report measuring probability calibration improvement (Platt Scaling / Isotonic)."""
 
     method: str = Field(description="sigmoid (Platt Scaling) or isotonic")
-    pre_brier_score: float = Field(ge=0.0, description="Brier score before calibration")
-    post_brier_score: float = Field(ge=0.0, description="Brier score after calibration")
-    brier_score_lift: float = Field(description="Improvement delta (positive is better)")
-    is_well_calibrated: bool = Field(description="True if post-calibration Brier score <= 0.10")
+    pre_brier_score: float = Field(default=0.0, ge=0.0, description="Brier score before calibration")
+    post_brier_score: float = Field(default=0.0, ge=0.0, description="Brier score after calibration")
+    brier_score_lift: float = Field(default=0.0, description="Improvement delta (positive is better)")
+    is_well_calibrated: bool = Field(default=False, description="True if post-calibration Brier score <= 0.10")
+    status: Optional[str] = Field(default=None, description="Execution status or skipped notes")
+    pre_ece: Optional[float] = Field(default=None, description="Expected Calibration Error before calibration")
+    post_ece: Optional[float] = Field(default=None, description="Expected Calibration Error after calibration")
+    ece_lift: Optional[float] = Field(default=None, description="ECE improvement delta")
 
     def to_compact(self) -> Dict[str, Any]:
-        return {
+        res: Dict[str, Any] = {
             "method": self.method,
             "pre_brier_score": round(self.pre_brier_score, 4),
             "post_brier_score": round(self.post_brier_score, 4),
             "brier_score_lift": round(self.brier_score_lift, 4),
             "is_well_calibrated": self.is_well_calibrated,
         }
+        if self.status:
+            res["status"] = self.status
+        if self.pre_ece is not None and self.post_ece is not None:
+            res["pre_ece"] = round(self.pre_ece, 4)
+            res["post_ece"] = round(self.post_ece, 4)
+            if self.ece_lift is not None:
+                res["ece_lift"] = round(self.ece_lift, 4)
+        return res
 
 
 class ThresholdReportDTO(BaseDTO):
