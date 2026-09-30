@@ -238,6 +238,14 @@ class TournamentArena:
                 pass
 
         champion = evaluations[0] if evaluations else None
+        self.champion_estimator = None
+        if champion:
+            for name, m in fitted_models:
+                if name == champion.model_name:
+                    self.champion_estimator = m
+                    break
+        if self.champion_estimator is None and fitted_models:
+            self.champion_estimator = fitted_models[0][1]
 
         return TournamentLeaderboardDTO(
             task_type=task_type,

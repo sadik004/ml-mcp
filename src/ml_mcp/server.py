@@ -12,6 +12,10 @@ from ml_mcp.engine.json_sanitizer import sanitize_for_json
 # Instantiate FastMCP server instance
 mcp = FastMCP("ml.mcp")
 
+# Register the 25 Production Tools
+from ml_mcp.tools import register_all_tools
+register_all_tools(mcp)
+
 
 @mcp.tool()
 async def ml_ping() -> Dict[str, Any]:
