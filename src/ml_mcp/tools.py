@@ -1,4 +1,4 @@
-"""FastMCP Tool Registrations exposing all 25 production engines."""
+﻿"""FastMCP Tool Registrations exposing all 25 production engines."""
 from __future__ import annotations
 
 import logging
@@ -262,6 +262,11 @@ def register_all_tools(mcp: FastMCP) -> None:
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
+            has_non_numeric = any(X[col].dtype == "object" or isinstance(X[col].dtype, pd.StringDtype) or X[col].isnull().any() for col in X.columns)
+            if has_non_numeric:
+                builder = DefensivePipelineBuilder()
+                pipe = builder.build_pipeline(df, target_column=target_column)
+                X = pipe.fit_transform(X, y)
             clf = RandomForestClassifier(n_estimators=15, random_state=42)
             clf.fit(X, y)
             probas = clf.predict_proba(X)[:, 1] if hasattr(clf, "predict_proba") else clf.predict(X)
@@ -284,10 +289,16 @@ def register_all_tools(mcp: FastMCP) -> None:
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
+            has_non_numeric = any(X[col].dtype == "object" or isinstance(X[col].dtype, pd.StringDtype) or X[col].isnull().any() for col in X.columns)
+            if has_non_numeric:
+                builder = DefensivePipelineBuilder()
+                pipe = builder.build_pipeline(df, target_column=target_column)
+                X = pipe.fit_transform(X, y)
             clf = RandomForestClassifier(n_estimators=15, random_state=42)
             clf.fit(X, y)
             explainer = TreeShapExplainer()
-            report = explainer.explain(clf, X, feature_names=list(X.columns), top_k=top_k)
+            feature_names = [f"f_{i}" for i in range(X.shape[1])] if hasattr(X, "shape") else list(df.drop(columns=[target_column]).columns)
+            report = explainer.explain(clf, X, feature_names=feature_names, top_k=top_k)
             return sanitize_for_json(report)
         except Exception as e:
             return format_error_envelope(e, "ml_explain_predictions", ["csv_path", "target_column"])
@@ -323,6 +334,11 @@ def register_all_tools(mcp: FastMCP) -> None:
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
+            has_non_numeric = any(X[col].dtype == "object" or isinstance(X[col].dtype, pd.StringDtype) or X[col].isnull().any() for col in X.columns)
+            if has_non_numeric:
+                builder = DefensivePipelineBuilder()
+                pipe = builder.build_pipeline(df, target_column=target_column)
+                X = pipe.fit_transform(X, y)
             clf = RandomForestClassifier(n_estimators=15, random_state=42)
             clf.fit(X, y)
 
@@ -375,6 +391,11 @@ def register_all_tools(mcp: FastMCP) -> None:
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
+            has_non_numeric = any(X[col].dtype == "object" or isinstance(X[col].dtype, pd.StringDtype) or X[col].isnull().any() for col in X.columns)
+            if has_non_numeric:
+                builder = DefensivePipelineBuilder()
+                pipe = builder.build_pipeline(df, target_column=target_column)
+                X = pipe.fit_transform(X, y)
             clf = RandomForestClassifier(n_estimators=15, random_state=42)
             clf.fit(X, y)
             exporter = ModelExporter()
@@ -395,6 +416,11 @@ def register_all_tools(mcp: FastMCP) -> None:
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
+            has_non_numeric = any(X[col].dtype == "object" or isinstance(X[col].dtype, pd.StringDtype) or X[col].isnull().any() for col in X.columns)
+            if has_non_numeric:
+                builder = DefensivePipelineBuilder()
+                pipe = builder.build_pipeline(df, target_column=target_column)
+                X = pipe.fit_transform(X, y)
             clf = RandomForestClassifier(n_estimators=15, random_state=42)
             clf.fit(X, y)
             optimizer = ONNXOptimizer()
@@ -524,3 +550,5 @@ def register_all_tools(mcp: FastMCP) -> None:
             return sanitize_for_json({"job_id": job_id, "status": "job_not_found_or_already_completed"})
         except Exception as e:
             return format_error_envelope(e, "ml_cancel_job", ["job_id"])
+
+

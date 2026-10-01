@@ -1,4 +1,4 @@
-"""Leak-Free Stacking Ensemble Engine using Out-of-Fold cross-validation meta-features."""
+﻿"""Leak-Free Stacking Ensemble Engine using Out-of-Fold cross-validation meta-features."""
 from __future__ import annotations
 
 from typing import Any, List, Literal, Tuple
@@ -32,7 +32,7 @@ class StackingEngine:
                 final_estimator=final_estimator,
                 cv=cv_splits,
                 passthrough=False,
-                n_jobs=-1,
+                n_jobs=1,
             )
             val_metric = scoring if scoring in ["roc_auc", "average_precision", "f1_weighted", "accuracy"] else "accuracy"
         else:
@@ -42,7 +42,7 @@ class StackingEngine:
                 final_estimator=final_estimator,
                 cv=cv_splits,
                 passthrough=False,
-                n_jobs=-1,
+                n_jobs=1,
             )
             val_metric = "r2"
 
@@ -51,9 +51,10 @@ class StackingEngine:
 
         # Estimate out-of-fold generalization score
         try:
-            scores = cross_val_score(stacking_model, X, y, cv=cv_splits, scoring=val_metric, n_jobs=-1)
+            scores = cross_val_score(stacking_model, X, y, cv=cv_splits, scoring=val_metric, n_jobs=1)
             oof_score = float(np.mean(scores))
         except Exception:
             oof_score = 0.85
 
         return stacking_model, oof_score
+

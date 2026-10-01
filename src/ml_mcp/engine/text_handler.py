@@ -1,4 +1,4 @@
-"""Free-form natural language text feature detector with UUID and hash filtering."""
+﻿"""Free-form natural language text feature detector with UUID and hash filtering."""
 from __future__ import annotations
 
 import re
@@ -79,3 +79,6 @@ class TextFeatureHandler:
             unique_token_counts=unique_tokens,
             recommended_strategy="tfidf_sublinear",
         )
+
+    # Alias for FastMCP tool compatibility
+    detect_text_features = analyze_text_features

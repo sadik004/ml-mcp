@@ -1,4 +1,4 @@
-"""Tournament Arena: 8-Model Competitive Cross-Validation with Stacking and Hardware GPU Acceleration."""
+﻿"""Tournament Arena: 8-Model Competitive Cross-Validation with Stacking and Hardware GPU Acceleration."""
 from __future__ import annotations
 
 import time
@@ -125,7 +125,20 @@ class TournamentArena:
             groups = None
 
         y = df[target_column]
-        feature_names = [str(c) for c in X.columns]
+        # Defensive auto-preprocessing if non-numeric/null features exist
+        has_non_numeric = any(
+            X[col].dtype == "object" or isinstance(X[col].dtype, pd.StringDtype) or X[col].isnull().any()
+            for col in X.columns
+        )
+        if has_non_numeric:
+            from ml_mcp.engine.pipeline_builder import DefensivePipelineBuilder
+            builder = DefensivePipelineBuilder()
+            pipe = builder.build_pipeline(df, target_column=target_column)
+            X_trans = pipe.fit_transform(X, y)
+            feature_names = [f"f_{i}" for i in range(X_trans.shape[1])]
+            X = pd.DataFrame(X_trans, columns=feature_names, index=X.index)
+        else:
+            feature_names = [str(c) for c in X.columns]
 
         # Configure cross-validation splitter
         if group_column and groups is not None:
@@ -255,3 +268,4 @@ class TournamentArena:
             stacking_candidates=top_candidates,
             leaderboard=evaluations,
         )
+
