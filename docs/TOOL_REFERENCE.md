@@ -4,6 +4,8 @@
 > **Server Implementation:** `src/ml_mcp/server.py` & `src/ml_mcp/tools.py`  
 > **Communication Protocol:** Model Context Protocol (MCP) JSON-RPC 2.0 (Stdio & SSE)
 
+> **Phased Architectural Curriculum:** Explore the full 5-phase lifecycle in [docs/phases/](phases/README.md).
+>
 > **Deep-Dive Architectural Guides:** Detailed human stories, mathematical models, and internal mechanics are documented in [docs/tools/](tools/README.md):
 > - [ml_benchmark_models](tools/ml_benchmark_models.md)
 > - [ml_detect_target_leakage](tools/ml_detect_target_leakage.md)
