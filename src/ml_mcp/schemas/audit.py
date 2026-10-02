@@ -167,3 +167,23 @@ class ConstraintValidationReportDTO(BaseDTO):
                 for v in self.violations_by_column
             ],
         }
+
+
+class CollinearPairDTO(BaseDTO):
+    """Collinear feature pair comparison and selection decision."""
+    feature_a: str = Field(description="First collinear feature candidate")
+    feature_b: str = Field(description="Second collinear feature candidate")
+    correlation: float = Field(description="Pairwise absolute correlation coefficient")
+    kept: str = Field(description="Feature retained based on predictive signal")
+    dropped: str = Field(description="Inferior feature pruned from dataset")
+    selection_metric: str = Field(description="Metric used for competition (pearson, anova_f, variance_non_null)")
+
+
+class DatasetLineageDTO(BaseDTO):
+    """Complete provenance record binding dataset state to code commit."""
+    job_id: str = Field(description="Unique experiment job identifier")
+    dataset_hash: str = Field(description="SHA-256 digest of dataset raw bytes")
+    git_commit: Optional[str] = Field(default=None, description="Repository commit SHA-256")
+    total_rows: int = Field(ge=0, description="Total rows in dataset snapshot")
+    total_columns: int = Field(ge=0, description="Total columns in dataset snapshot")
+    timestamp: str = Field(description="ISO 8601 creation timestamp")

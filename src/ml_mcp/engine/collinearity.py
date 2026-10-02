@@ -4,6 +4,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Set, Tuple
 import numpy as np
 import pandas as pd
+from sklearn.feature_selection import f_classif
+
+from ml_mcp.schemas.audit import CollinearPairDTO
 
 
 class CollinearityFilter:
@@ -72,9 +75,14 @@ class CollinearityFilter:
         self,
         df: pd.DataFrame,
         target_column: Optional[str] = None,
-        task_type: str = "classification",
+        task_type: str = "auto",
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """Identifies collinear clusters and drops inferior twins based on target correlation.
+        """Identifies collinear clusters and drops inferior twins based on target signal.
+
+        Competitive Drop Rule:
+        - Continuous Target: Pearson correlation |r(A, y)| vs |r(B, y)|
+        - Categorical Target: ANOVA F-value (F_A vs F_B) via sklearn.feature_selection.f_classif
+        - No Target Provided: Variance * Non-Null Ratio (N_valid / N_total)
 
         Returns:
             Tuple of (pruned_dataframe, collinearity_report_dict)
@@ -107,19 +115,64 @@ class CollinearityFilter:
         # Compute pairwise correlation matrix safely
         corr_matrix = feature_df[num_cols].corr().abs()
 
-        # Compute correlation with target for competitive drop decision
-        target_corrs: Dict[str, float] = {}
-        if y is not None and pd.api.types.is_numeric_dtype(y):
+        # Determine target modality (continuous, categorical, or none)
+        is_continuous_target = False
+        is_categorical_target = False
+
+        if y is not None:
+            valid_y = y.dropna()
+            if len(valid_y) > 5:
+                unique_y = valid_y.nunique()
+                if task_type == "regression" or (task_type == "auto" and pd.api.types.is_numeric_dtype(y) and unique_y > 15):
+                    is_continuous_target = True
+                else:
+                    is_categorical_target = True
+
+        # Precompute predictive relevance scores
+        feature_signal_scores: Dict[str, float] = {}
+        selection_metric = "variance_non_null"
+
+        if is_continuous_target and y is not None:
+            selection_metric = "pearson"
             for col in num_cols:
                 valid = feature_df[col].notna() & y.notna()
                 if valid.sum() > 5:
                     r = float(np.abs(np.corrcoef(feature_df.loc[valid, col], y[valid])[0, 1]))
-                    target_corrs[col] = 0.0 if np.isnan(r) else r
+                    feature_signal_scores[col] = 0.0 if np.isnan(r) else r
                 else:
-                    target_corrs[col] = 0.0
+                    feature_signal_scores[col] = 0.0
+
+        elif is_categorical_target and y is not None:
+            selection_metric = "anova_f"
+            # Encode categorical target if needed
+            y_codes = pd.Categorical(y).codes
+            valid_mask = (y_codes >= 0)
+            
+            for col in num_cols:
+                col_valid = valid_mask & feature_df[col].notna()
+                if col_valid.sum() > 5 and len(np.unique(y_codes[col_valid])) > 1:
+                    try:
+                        X_sub = feature_df.loc[col_valid, [col]].to_numpy()
+                        y_sub = y_codes[col_valid]
+                        f_scores, _ = f_classif(X_sub, y_sub)
+                        f_val = float(f_scores[0]) if len(f_scores) > 0 and not np.isnan(f_scores[0]) else 0.0
+                        feature_signal_scores[col] = max(0.0, f_val)
+                    except Exception:
+                        feature_signal_scores[col] = 0.0
+                else:
+                    feature_signal_scores[col] = 0.0
+
         else:
-            # Default to 0.0 if no numeric target available
-            target_corrs = {col: 0.0 for col in num_cols}
+            # No target provided: Retain feature with higher variance * non-null ratio
+            selection_metric = "variance_non_null"
+            for col in num_cols:
+                series = feature_df[col].dropna()
+                if len(series) > 1:
+                    var = float(series.var())
+                    non_null_ratio = float(len(series) / len(feature_df))
+                    feature_signal_scores[col] = var * non_null_ratio
+                else:
+                    feature_signal_scores[col] = 0.0
 
         collinear_pairs: List[Dict[str, Any]] = []
         dropped_set: Set[str] = set()
@@ -141,11 +194,10 @@ class CollinearityFilter:
 
                 if r_val >= self.threshold_corr:
                     # Competitive Drop Rule:
-                    # Drop the feature that has weaker predictive correlation with target
-                    corr_a = target_corrs.get(col_a, 0.0)
-                    corr_b = target_corrs.get(col_b, 0.0)
+                    score_a = feature_signal_scores.get(col_a, 0.0)
+                    score_b = feature_signal_scores.get(col_b, 0.0)
 
-                    if corr_a >= corr_b:
+                    if score_a >= score_b:
                         victim = col_b
                         winner = col_a
                     else:
@@ -153,13 +205,15 @@ class CollinearityFilter:
                         winner = col_b
 
                     dropped_set.add(victim)
-                    collinear_pairs.append({
-                        "feature_a": col_a,
-                        "feature_b": col_b,
-                        "correlation": round(r_val, 4),
-                        "kept": winner,
-                        "dropped": victim,
-                    })
+                    pair_dto = CollinearPairDTO(
+                        feature_a=col_a,
+                        feature_b=col_b,
+                        correlation=round(r_val, 4),
+                        kept=winner,
+                        dropped=victim,
+                        selection_metric=selection_metric,
+                    )
+                    collinear_pairs.append(pair_dto.model_dump())
 
                     if victim == col_a:
                         break  # col_a was dropped, move to next outer column
@@ -180,6 +234,7 @@ class CollinearityFilter:
             "collinear_pairs": collinear_pairs,
             "dropped_features": list(dropped_set),
             "remaining_features_count": len(remaining_cols),
+            "selection_metric": selection_metric,
         }
 
         return pruned_df, report
