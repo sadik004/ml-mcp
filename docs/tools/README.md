@@ -22,6 +22,7 @@ Comprehensive architectural guides, human histories, mathematical foundations, p
 | **`ml_conformal_risk_control`** | AI Safety & Mathematical Risk Guarantees | [ml_conformal_risk_control.md](ml_conformal_risk_control.md) |
 | **`ml_calibrate_probabilities`** | Probability Calibration & Brier Optimization | [ml_calibrate_probabilities.md](ml_calibrate_probabilities.md) |
 | **`ml_tune_threshold_and_errors`** | Decision Threshold Tuning & Error Forensics | [ml_tune_threshold_and_errors.md](ml_tune_threshold_and_errors.md) |
+| **`ml_explain_predictions`** | Explainable AI (XAI) & TreeSHAP | [ml_explain_predictions.md](ml_explain_predictions.md) |
 
 ---
 

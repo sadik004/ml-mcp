@@ -45,7 +45,8 @@ flowchart LR
 - **Topic 1:** [ml_conformal_risk_control](phase-04-validation-and-safety/ml_conformal_risk_control.md) — UC Berkeley Conformal Risk Control providing mathematical guarantees E[loss] <= alpha.
 - **Topic 2:** [ml_calibrate_probabilities](phase-04-validation-and-safety/ml_calibrate_probabilities.md) — Platt Scaling & Isotonic Regression aligning posterior probabilities with true empirical risk.
 - **Topic 3:** [ml_tune_threshold_and_errors](phase-04-validation-and-safety/ml_tune_threshold_and_errors.md) — Cost-sensitive decision threshold optimization using F-beta and error forensics.
-- *Upcoming topics: `ml_explain_predictions`, `ml_detect_ood`, `ml_stress_test_and_fairness`.*
+- **Topic 4:** [ml_explain_predictions](phase-04-validation-and-safety/ml_explain_predictions.md) — Sub-10s TreeSHAP feature attributions with token-shielded top-K directional impact.
+- *Upcoming topics: `ml_detect_ood`, `ml_stress_test_and_fairness`.*
 
 ---
 
