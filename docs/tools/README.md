@@ -24,6 +24,7 @@ Comprehensive architectural guides, human histories, mathematical foundations, p
 | **`ml_tune_threshold_and_errors`** | Decision Threshold Tuning & Error Forensics | [ml_tune_threshold_and_errors.md](ml_tune_threshold_and_errors.md) |
 | **`ml_explain_predictions`** | Explainable AI (XAI) & TreeSHAP | [ml_explain_predictions.md](ml_explain_predictions.md) |
 | **`ml_detect_ood`** | Out-of-Distribution & Anomaly Detection | [ml_detect_ood.md](ml_detect_ood.md) |
+| **`ml_stress_test_and_fairness`** | Adversarial Stress & Slice Fairness | [ml_stress_test_and_fairness.md](ml_stress_test_and_fairness.md) |
 
 ---
 

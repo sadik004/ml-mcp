@@ -47,10 +47,10 @@ flowchart LR
 - **Topic 3:** [ml_tune_threshold_and_errors](phase-04-validation-and-safety/ml_tune_threshold_and_errors.md) — Cost-sensitive decision threshold optimization using F-beta and error forensics.
 - **Topic 4:** [ml_explain_predictions](phase-04-validation-and-safety/ml_explain_predictions.md) — Sub-10s TreeSHAP feature attributions with token-shielded top-K directional impact.
 - **Topic 5:** [ml_detect_ood](phase-04-validation-and-safety/ml_detect_ood.md) — Out-of-Distribution anomaly detection using Isolation Forest and Mahalanobis Distance.
-- *Upcoming topic: `ml_stress_test_and_fairness`.*
+- **Topic 6:** [ml_stress_test_and_fairness](phase-04-validation-and-safety/ml_stress_test_and_fairness.md) — Adversarial noise stress testing and US EEOC 80% demographic slice fairness auditing.
 
 ---
 
 ### 🚀 [Phase 5: Production Serving & MLOps](phase-05-serving-and-mlops/)
 > **Mission:** ONNX quantization, 3-tier clean architecture FastAPI endpoints, Dockerization, and real-time drift monitoring.
-- *Upcoming topics: `ml_optimize_inference`, `ml_generate_serving_api`, `ml_generate_docker_spec`, `ml_monitor_drift`.*
+- *Upcoming topics: `ml_optimize_inference`, `ml_generate_serving_api`, `ml_generate_docker_spec`, `ml_monitor_drift`, `ml_batch_predict`, `ml_export_and_document`.*
