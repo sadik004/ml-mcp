@@ -19,6 +19,8 @@ Comprehensive architectural guides, human histories, mathematical foundations, p
 | **`ml_tune_hyperparameters`** | Bayesian Optimization & Tuning | [ml_tune_hyperparameters.md](ml_tune_hyperparameters.md) |
 | **`ml_create_ensemble`** | Stacking Ensemble & Meta-Learning | [ml_create_ensemble.md](ml_create_ensemble.md) |
 | **`ml_pseudo_label_loop`** | Semi-Supervised Learning & Refinement | [ml_pseudo_label_loop.md](ml_pseudo_label_loop.md) |
+| **`ml_conformal_risk_control`** | AI Safety & Mathematical Risk Guarantees | [ml_conformal_risk_control.md](ml_conformal_risk_control.md) |
+| **`ml_calibrate_probabilities`** | Probability Calibration & Brier Optimization | [ml_calibrate_probabilities.md](ml_calibrate_probabilities.md) |
 
 ---
 

@@ -42,7 +42,9 @@ flowchart LR
 
 ### 🛡️ [Phase 4: Validation, Risk & AI Safety](phase-04-validation-and-safety/)
 > **Mission:** Conformal risk control, probability calibration, decision thresholds, stress testing, and out-of-distribution detection.
-- *Upcoming topics: `ml_conformal_risk_control`, `ml_calibrate_probabilities`, `ml_explain_predictions`, `ml_detect_ood`, `ml_tune_threshold_and_errors`.*
+- **Topic 1:** [ml_conformal_risk_control](phase-04-validation-and-safety/ml_conformal_risk_control.md) — UC Berkeley Conformal Risk Control providing mathematical guarantees E[loss] <= alpha.
+- **Topic 2:** [ml_calibrate_probabilities](phase-04-validation-and-safety/ml_calibrate_probabilities.md) — Platt Scaling & Isotonic Regression aligning posterior probabilities with true empirical risk.
+- *Upcoming topics: `ml_tune_threshold_and_errors`, `ml_explain_predictions`, `ml_detect_ood`, `ml_stress_test_and_fairness`.*
 
 ---
 
