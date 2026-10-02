@@ -196,7 +196,7 @@ class BayesianTuner:
             estimator = self._instantiate_model(model_name, task_type, params)
 
             # Evaluate with Cross-Validation
-            scores = cross_val_score(estimator, X_arr, y_arr, cv=cv, scoring=scoring_metric, n_jobs=-1)
+            scores = cross_val_score(estimator, X_arr, y_arr, cv=cv, scoring=scoring_metric, n_jobs=1)
             mean_score = float(np.mean(scores))
 
             # Scikit-learn negates loss metrics (e.g. neg_log_loss, neg_root_mean_squared_error)

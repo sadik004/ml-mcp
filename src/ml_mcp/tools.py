@@ -26,7 +26,8 @@ from ml_mcp.engine.error_envelope import format_error_envelope
 from ml_mcp.engine.explainer import TreeShapExplainer
 from ml_mcp.engine.exporter import ModelExporter
 from ml_mcp.engine.fairness_auditor import SliceFairnessAuditor
-from ml_mcp.engine.feature_synthesizer import CyclicalFeatureTransformer, RatioFeatureTransformer
+from ml_mcp.engine.feature_synthesizer import CyclicalFeatureTransformer, RatioFeatureTransformer, GroupByAggregationTransformer
+from ml_mcp.engine.feature_pruner import GradientFeatureSelector
 from ml_mcp.engine.json_sanitizer import sanitize_for_json
 from ml_mcp.engine.leakage import TargetLeakageDetector
 from ml_mcp.engine.onnx_optimizer import ONNXOptimizer
@@ -166,14 +167,16 @@ def register_all_tools(mcp: FastMCP) -> None:
     async def ml_auto_clean_and_pipe(
         csv_path: str,
         target_column: Optional[str] = None,
+        imputation_strategy: Literal["median", "mean", "iterative"] = "median",
     ) -> Dict[str, Any]:
-        """Build zero-leakage ColumnTransformer with defensive omnipresent imputers."""
+        """Build zero-leakage ColumnTransformer with defensive omnipresent imputers (median/mean/MICE)."""
         try:
             df = pd.read_csv(csv_path)
-            builder = DefensivePipelineBuilder()
+            builder = DefensivePipelineBuilder(imputation_strategy=imputation_strategy)
             pipe = builder.build_pipeline(df, target_column=target_column)
             return sanitize_for_json({
                 "status": "success",
+                "imputation_strategy": imputation_strategy,
                 "steps": [name for name, _ in pipe.steps],
                 "pipeline_str": str(pipe),
             })
@@ -207,8 +210,9 @@ def register_all_tools(mcp: FastMCP) -> None:
         time_column: Optional[str] = None,
         period: float = 24.0,
         ratio_pairs: Optional[List[List[str]]] = None,
+        group_specs: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Generate cyclical sin/cos features and safe non-zero division ratios."""
+        """Generate cyclical sin/cos features, safe ratios, and ExploreKit group aggregations."""
         try:
             df = pd.read_csv(csv_path)
             num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -235,6 +239,11 @@ def register_all_tools(mcp: FastMCP) -> None:
             ratio_tf = RatioFeatureTransformer(ratio_pairs=resolved_pairs)
             synthesized_df = ratio_tf.fit_transform(cyclical_df)
 
+            # 3. ExploreKit Group-By Aggregations
+            if group_specs:
+                group_tf = GroupByAggregationTransformer(group_specs=group_specs)
+                synthesized_df = group_tf.fit_transform(synthesized_df)
+
             new_columns = [c for c in synthesized_df.columns if c not in df.columns]
 
             return sanitize_for_json({
@@ -244,7 +253,39 @@ def register_all_tools(mcp: FastMCP) -> None:
                 "total_columns": len(synthesized_df.columns),
             })
         except Exception as e:
-            return format_error_envelope(e, "ml_synthesize_features", ["csv_path", "time_column"])
+            return format_error_envelope(e, "ml_synthesize_features", ["csv_path", "time_column", "group_specs"])
+
+    # ml_prune_features
+    @mcp.tool()
+    async def ml_prune_features(
+        csv_path: str,
+        target_column: str,
+        top_k: Optional[int] = None,
+        importance_threshold: float = 0.005,
+        task_type: Literal["auto", "classification", "regression"] = "auto",
+    ) -> Dict[str, Any]:
+        """Prune noisy and redundant features using gradient-boosted importance (OpenFE architecture)."""
+        try:
+            df = pd.read_csv(csv_path)
+            if target_column not in df.columns:
+                raise ValueError(f"Target column '{target_column}' not found in CSV.")
+            X = df.drop(columns=[target_column])
+            y = df[target_column]
+
+            selector = GradientFeatureSelector(
+                top_k=top_k,
+                importance_threshold=importance_threshold,
+                task_type=task_type,
+            )
+            selector.fit(X, y)
+            report = selector.get_report()
+            return sanitize_for_json({
+                "status": "success",
+                "data": report.model_dump(),
+            })
+        except Exception as e:
+            return format_error_envelope(e, "ml_prune_features", ["csv_path", "target_column"])
+
 
     # ml_transform_target
     @mcp.tool()

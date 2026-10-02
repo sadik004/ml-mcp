@@ -52,3 +52,46 @@ def test_ratio_transformer_division_by_zero_protection():
     assert not np.isnan(transformed["rev_per_unit"]).any()
     # At row 0: 100.0 / 1e-6 = 1e8
     assert transformed.loc[0, "rev_per_unit"] == pytest.approx(100.0 / 1e-6)
+
+def test_groupby_aggregation_transformer_explorekit():
+    from ml_mcp.engine.feature_synthesizer import GroupByAggregationTransformer
+
+    assert issubclass(GroupByAggregationTransformer, (BaseEstimator, TransformerMixin))
+
+    df_train = pd.DataFrame({
+        "city": ["Mirpur", "Mirpur", "Gulshan", "Gulshan", "Uttara"],
+        "rent": [20000.0, 30000.0, 80000.0, 100000.0, 50000.0],
+    })
+
+    transformer = GroupByAggregationTransformer(group_specs=[{
+        "cat_col": "city",
+        "num_col": "rent",
+        "aggregations": ["mean", "std"],
+        "create_relative_diff": True,
+        "create_relative_ratio": True,
+        "create_zscore": True,
+    }])
+
+    transformed_train = transformer.fit_transform(df_train)
+
+    # Check generated column presence
+    assert "rent_mean_by_city" in transformed_train.columns
+    assert "rent_std_by_city" in transformed_train.columns
+    assert "rent_diff_from_city_mean" in transformed_train.columns
+    assert "rent_ratio_to_city_mean" in transformed_train.columns
+    assert "rent_zscore_in_city" in transformed_train.columns
+
+    # Mirpur mean is 25000.0
+    assert transformed_train.loc[0, "rent_mean_by_city"] == 25000.0
+    assert transformed_train.loc[0, "rent_diff_from_city_mean"] == -5000.0
+    assert pytest.approx(transformed_train.loc[0, "rent_ratio_to_city_mean"], abs=1e-3) == 0.8
+
+    # Unseen category fallback test during transform
+    df_test = pd.DataFrame({
+        "city": ["Dhanmondi"],  # Unseen!
+        "rent": [60000.0],
+    })
+    transformed_test = transformer.transform(df_test)
+    assert not transformed_test.isna().any().any()
+    assert not np.isinf(transformed_test["rent_ratio_to_city_mean"]).any()
+

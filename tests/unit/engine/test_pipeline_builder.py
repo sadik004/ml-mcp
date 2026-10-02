@@ -63,3 +63,24 @@ def test_pipeline_builder_high_cardinality_target_encoding():
     pipeline.fit(X, y)
     preds = pipeline.predict(X.head(10))
     assert len(preds) == 10
+
+def test_pipeline_builder_mice_multivariate_imputation():
+    # Dataset with missing values where feature covariance matters
+    df = pd.DataFrame({
+        "age": [20.0, 25.0, 45.0, 52.0, np.nan, 30.0],
+        "salary": [25000.0, 32000.0, 75000.0, 88000.0, 82000.0, 40000.0],
+        "category": ["eng", "eng", "mgmt", "mgmt", "mgmt", "eng"],
+        "target": [0, 0, 1, 1, 1, 0],
+    })
+
+    builder = DefensivePipelineBuilder(imputation_strategy="iterative")
+    pipeline = builder.build_pipeline(df, target_column="target")
+
+    X = df.drop(columns=["target"])
+    y = df["target"]
+    pipeline.fit(X, y)
+
+    # Transformed data must have NO NaNs
+    transformed_X = pipeline.named_steps["preprocessor"].transform(X)
+    assert not np.isnan(transformed_X).any()
+
