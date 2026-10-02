@@ -46,7 +46,8 @@ flowchart LR
 - **Topic 2:** [ml_calibrate_probabilities](phase-04-validation-and-safety/ml_calibrate_probabilities.md) — Platt Scaling & Isotonic Regression aligning posterior probabilities with true empirical risk.
 - **Topic 3:** [ml_tune_threshold_and_errors](phase-04-validation-and-safety/ml_tune_threshold_and_errors.md) — Cost-sensitive decision threshold optimization using F-beta and error forensics.
 - **Topic 4:** [ml_explain_predictions](phase-04-validation-and-safety/ml_explain_predictions.md) — Sub-10s TreeSHAP feature attributions with token-shielded top-K directional impact.
-- *Upcoming topics: `ml_detect_ood`, `ml_stress_test_and_fairness`.*
+- **Topic 5:** [ml_detect_ood](phase-04-validation-and-safety/ml_detect_ood.md) — Out-of-Distribution anomaly detection using Isolation Forest and Mahalanobis Distance.
+- *Upcoming topic: `ml_stress_test_and_fairness`.*
 
 ---
 
