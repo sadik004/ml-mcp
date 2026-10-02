@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -83,6 +83,35 @@ def register_all_tools(mcp: FastMCP) -> None:
         except Exception as e:
             return format_error_envelope(e, "ml_detect_target_leakage", ["csv_path", "target_column"])
 
+    # ml_check_collinearity
+    @mcp.tool()
+    async def ml_check_collinearity(
+        csv_path: str,
+        target_column: Optional[str] = None,
+        vif_threshold: float = 10.0,
+        correlation_cutoff: float = 0.90,
+        view: Literal["compact", "detailed"] = "compact",
+    ) -> Dict[str, Any]:
+        """Detect multicollinear features using pure NumPy VIF and Pairwise Competitive Drop Rule."""
+        try:
+            df = pd.read_csv(csv_path)
+            collin_filter = CollinearityFilter(threshold_corr=correlation_cutoff, vif_threshold=vif_threshold)
+            pruned_df, report = collin_filter.filter_collinearity(df, target_column=target_column)
+            if view == "compact":
+                res = {
+                    "vif_threshold": report["vif_threshold"],
+                    "correlation_cutoff": report["threshold_corr"],
+                    "high_vif_features": report["high_vif_features"],
+                    "dropped_features": report["dropped_features"],
+                    "collinear_pairs_count": len(report["collinear_pairs"]),
+                    "remaining_features_count": report["remaining_features_count"],
+                }
+            else:
+                res = report
+            return sanitize_for_json(res)
+        except Exception as e:
+            return format_error_envelope(e, "ml_check_collinearity", ["csv_path"])
+
     # 3. ml_handle_text_features
     @mcp.tool()
     async def ml_handle_text_features(csv_path: str) -> Dict[str, Any]:
@@ -140,19 +169,72 @@ def register_all_tools(mcp: FastMCP) -> None:
         csv_path: str,
         time_column: Optional[str] = None,
         period: float = 24.0,
+        ratio_pairs: Optional[List[List[str]]] = None,
     ) -> Dict[str, Any]:
         """Generate cyclical sin/cos features and safe non-zero division ratios."""
         try:
             df = pd.read_csv(csv_path)
-            synthesizer = CyclicalFeatureTransformer(period=period)
-            features = [time_column] if time_column and time_column in df.columns else list(df.select_dtypes(include=[np.number]).columns[:1])
-            res = synthesizer.fit_transform(df[features])
+            num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+            # 1. Cyclical Feature Transformation
+            features = [time_column] if time_column and time_column in df.columns else (num_cols[:1] if num_cols else [])
+            cyclical_df = df.copy()
+            if features:
+                cyclical_tf = CyclicalFeatureTransformer(time_periods={col: period for col in features})
+                cyclical_df = cyclical_tf.fit_transform(cyclical_df)
+
+            # 2. Ratio Feature Transformation
+            resolved_pairs: List[Tuple[str, str, str]] = []
+            if ratio_pairs:
+                for pair in ratio_pairs:
+                    if len(pair) == 3:
+                        resolved_pairs.append((pair[0], pair[1], pair[2]))
+                    elif len(pair) == 2:
+                        resolved_pairs.append((pair[0], pair[1], f"{pair[0]}_per_{pair[1]}"))
+            elif len(num_cols) >= 2:
+                col1, col2 = num_cols[0], num_cols[1]
+                resolved_pairs.append((col1, col2, f"{col1}_per_{col2}"))
+
+            ratio_tf = RatioFeatureTransformer(ratio_pairs=resolved_pairs)
+            synthesized_df = ratio_tf.fit_transform(cyclical_df)
+
+            new_columns = [c for c in synthesized_df.columns if c not in df.columns]
+
             return sanitize_for_json({
                 "status": "success",
-                "synthesized_columns_count": res.shape[1],
+                "synthesized_columns_count": len(new_columns),
+                "synthesized_columns": new_columns,
+                "total_columns": len(synthesized_df.columns),
             })
         except Exception as e:
             return format_error_envelope(e, "ml_synthesize_features", ["csv_path", "time_column"])
+
+    # ml_transform_target
+    @mcp.tool()
+    async def ml_transform_target(
+        csv_path: Optional[str] = None,
+        target_column: Optional[str] = None,
+        values: Optional[List[float]] = None,
+        skew_threshold: float = 1.5,
+        method: Literal["auto", "log1p", "yeo-johnson"] = "auto",
+    ) -> Dict[str, Any]:
+        """Normalize skewed continuous target variables using log1p or Yeo-Johnson power transform."""
+        try:
+            if csv_path and target_column:
+                df = pd.read_csv(csv_path)
+                if target_column not in df.columns:
+                    raise ValueError(f"Target column '{target_column}' not found in CSV.")
+                y_data = df[target_column].dropna().values
+            elif values is not None:
+                y_data = np.array(values, dtype=np.float64)
+            else:
+                raise ValueError("Must provide either (csv_path and target_column) or values.")
+
+            transformer = SkewedTargetTransformer(skew_threshold=skew_threshold)
+            result = transformer.transform_target(y_data, method=method)
+            return sanitize_for_json(result)
+        except Exception as e:
+            return format_error_envelope(e, "ml_transform_target", ["csv_path", "target_column", "values"])
 
     # 7. ml_benchmark_models
     @mcp.tool()
@@ -551,4 +633,172 @@ def register_all_tools(mcp: FastMCP) -> None:
         except Exception as e:
             return format_error_envelope(e, "ml_cancel_job", ["job_id"])
 
+    # 26. ml_colab_status
+    @mcp.tool()
+    async def ml_colab_status(session: str = "gpu") -> Dict[str, Any]:
+        """Check active Google Colab GPU hardware, VRAM, and connection health."""
+        try:
+            from ml_mcp.colab_bridge import ColabCloudRunner
+            runner = ColabCloudRunner()
+            status = runner.get_status(session_name=session)
+            return sanitize_for_json(status)
+        except Exception as e:
+            return format_error_envelope(e, "ml_colab_status", ["session"])
+
+    # 27. ml_colab_execute
+    @mcp.tool()
+    async def ml_colab_execute(
+        code: str,
+        session: str = "gpu",
+        timeout: float = 120.0,
+    ) -> Dict[str, Any]:
+        """Execute arbitrary Python / ML code directly on the remote Google Colab Tesla T4 GPU."""
+        try:
+            from ml_mcp.colab_bridge import ColabCloudRunner
+            runner = ColabCloudRunner()
+            result = runner.execute_code(code, session=session, timeout=timeout)
+            return sanitize_for_json(result)
+        except Exception as e:
+            return format_error_envelope(e, "ml_colab_execute", ["code"])
+
+    # 28. ml_colab_upload
+    @mcp.tool()
+    async def ml_colab_upload(
+        local_path: str,
+        remote_path: str = "/content/data.csv",
+        session: str = "gpu",
+    ) -> Dict[str, Any]:
+        """Upload a local dataset or script to the remote Google Colab cloud filesystem."""
+        try:
+            from ml_mcp.colab_bridge import ColabCloudRunner
+            runner = ColabCloudRunner()
+            result = runner.upload_file(local_path, remote_path, session=session)
+            return sanitize_for_json(result)
+        except Exception as e:
+            return format_error_envelope(e, "ml_colab_upload", ["local_path", "remote_path"])
+
+    # 29. ml_colab_download
+    @mcp.tool()
+    async def ml_colab_download(
+        remote_path: str,
+        local_path: str,
+        session: str = "gpu",
+    ) -> Dict[str, Any]:
+        """Download trained models, ONNX artifacts, or metrics from Google Colab to local storage."""
+        try:
+            from ml_mcp.colab_bridge import ColabCloudRunner
+            runner = ColabCloudRunner()
+            result = runner.download_file(remote_path, local_path, session=session)
+            return sanitize_for_json(result)
+        except Exception as e:
+            return format_error_envelope(e, "ml_colab_download", ["remote_path", "local_path"])
+
+    # 30. ml_colab_stop
+    @mcp.tool()
+    async def ml_colab_stop(session: str = "gpu") -> Dict[str, Any]:
+        """Release the Google Colab GPU runtime to conserve compute units when work is done."""
+        try:
+            from ml_mcp.colab_bridge import ColabCloudRunner
+            runner = ColabCloudRunner()
+            result = runner.stop_session(session=session)
+            return sanitize_for_json(result)
+        except Exception as e:
+            return format_error_envelope(e, "ml_colab_stop", ["session"])
+
+    # 31. ml_conformal_risk_control
+    @mcp.tool()
+    async def ml_conformal_risk_control(
+        csv_path: str,
+        target_column: str,
+        loss_type: Literal["misclassification", "fnr", "asymmetric_cost"] = "misclassification",
+        target_risk: float = 0.05,
+        test_size: float = 0.3,
+        mondrian: bool = False,
+    ) -> Dict[str, Any]:
+        """Apply Conformal Risk Control (CRC) providing mathematical guarantees E[loss] <= target_risk.
+        
+        Controls bounded loss functions including:
+        - misclassification: guarantees coverage >= 1 - alpha (e.g. 95% confidence)
+        - fnr: controls False Negative Rate <= alpha on high-risk positive instances
+        - asymmetric_cost: asymmetric financial loss penalty matrix
+        
+        Outputs calibrated lambda threshold, empirical test risk, prediction sets, and
+        automatically flags ambiguous or empty cases for human-in-the-loop triage.
+        """
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.model_selection import train_test_split
+            from ml_mcp.engine.conformal_risk_control import ConformalRiskControlEngine
+            from ml_mcp.schemas.safety import CRCReportDTO
+
+            df = pd.read_csv(csv_path)
+            if target_column not in df.columns:
+                raise ValueError(f"Target column '{target_column}' not found in CSV.")
+
+            # Prepare numeric features and encode target
+            X = df.drop(columns=[target_column]).select_dtypes(include=[np.number]).fillna(0)
+            if X.shape[1] == 0:
+                X = pd.get_dummies(df.drop(columns=[target_column]), drop_first=True)
+
+            y_raw = df[target_column]
+            classes, y = np.unique(y_raw, return_inverse=True)
+
+            # Split into training, calibration, and test sets
+            X_train, X_temp, y_train, y_temp = train_test_split(
+                X, y, test_size=test_size, random_state=42
+            )
+            X_cal, X_test, y_cal, y_test = train_test_split(
+                X_temp, y_temp, test_size=0.5, random_state=42
+            )
+
+            clf = RandomForestClassifier(n_estimators=30, random_state=42)
+            clf.fit(X_train, y_train)
+
+            probs_cal = clf.predict_proba(X_cal)
+            probs_test = clf.predict_proba(X_test)
+
+            crc = ConformalRiskControlEngine()
+            calibrated_lambda, _ = crc.calibrate(
+                probs_cal=probs_cal,
+                y_cal=y_cal,
+                loss_type=loss_type,
+                target_risk=target_risk,
+                mondrian=mondrian,
+            )
+
+            # Evaluate on unseen test set
+            psets_test, triage_records = crc.predict_and_triage(probs_test, calibrated_lambda)
+            test_losses = crc.evaluate_loss(psets_test, y_test, loss_type=loss_type)
+            if loss_type == "fnr":
+                pos_mask = (y_test == 1)
+                empirical_risk = float(np.mean(test_losses[pos_mask])) if np.any(pos_mask) else 0.0
+            else:
+                empirical_risk = float(np.mean(test_losses))
+
+            set_sizes = [len(s) for s in psets_test]
+            avg_set_size = float(np.mean(set_sizes)) if set_sizes else 0.0
+            ambiguity_count = sum(1 for s in set_sizes if s > 1)
+            empty_count = sum(1 for s in set_sizes if s == 0)
+            triage_count = sum(1 for r in triage_records if r["needs_human_review"])
+
+            report = CRCReportDTO(
+                loss_function=loss_type,
+                target_risk=float(target_risk),
+                empirical_risk=float(empirical_risk),
+                calibrated_lambda=float(calibrated_lambda) if isinstance(calibrated_lambda, (int, float)) else 0.0,
+                guarantee_satisfied=bool(empirical_risk <= target_risk + 0.05),
+                total_cal_samples=len(y_cal),
+                average_set_size=float(avg_set_size),
+                ambiguity_rate=float(ambiguity_count / len(y_test)) if len(y_test) > 0 else 0.0,
+                empty_set_rate=float(empty_count / len(y_test)) if len(y_test) > 0 else 0.0,
+                human_triage_count=int(triage_count),
+                mondrian_conditional=mondrian,
+                per_class_thresholds={str(k): round(v, 4) for k, v in calibrated_lambda.items()} if isinstance(calibrated_lambda, dict) else None,
+            )
+
+            compact = report.to_compact()
+            compact["triage_samples_preview"] = triage_records[:5]
+            return sanitize_for_json(compact)
+        except Exception as e:
+            return format_error_envelope(e, "ml_conformal_risk_control", ["csv_path", "target_column"])
 

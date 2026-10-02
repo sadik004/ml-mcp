@@ -10,19 +10,31 @@ from sklearn.base import BaseEstimator, TransformerMixin
 class CyclicalFeatureTransformer(BaseEstimator, TransformerMixin):
     """Projects periodic temporal features into continuous circular space via sin and cos."""
 
-    def __init__(self, time_periods: Optional[Dict[str, float]] = None) -> None:
+    def __init__(
+        self,
+        time_periods: Optional[Dict[str, float]] = None,
+        period: Optional[float] = None,
+    ) -> None:
         # e.g. {"hour": 24.0, "dayofweek": 7.0, "month": 12.0}
         self.time_periods = time_periods or {}
+        self.period = period
 
     def fit(self, X: pd.DataFrame, y: Any = None) -> "CyclicalFeatureTransformer":
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X_out = X.copy()
-        for col, period in self.time_periods.items():
-            if col in X_out.columns:
+        if self.time_periods:
+            for col, period in self.time_periods.items():
+                if col in X_out.columns:
+                    series = pd.to_numeric(X_out[col], errors="coerce").fillna(0.0)
+                    radians = 2.0 * np.pi * series / float(period)
+                    X_out[f"{col}_sin"] = np.sin(radians)
+                    X_out[f"{col}_cos"] = np.cos(radians)
+        elif self.period is not None:
+            for col in X_out.columns:
                 series = pd.to_numeric(X_out[col], errors="coerce").fillna(0.0)
-                radians = 2.0 * np.pi * series / float(period)
+                radians = 2.0 * np.pi * series / float(self.period)
                 X_out[f"{col}_sin"] = np.sin(radians)
                 X_out[f"{col}_cos"] = np.cos(radians)
         return X_out

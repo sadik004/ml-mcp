@@ -46,3 +46,20 @@ def test_target_transformer_unskewed():
 
     # Normal target should NOT be wrapped, returns base estimator
     assert isinstance(regressor, Ridge)
+
+
+def test_target_transformer_direct_transform():
+    np.random.seed(42)
+    # Heavy right-skewed positive target
+    y_pos = np.random.lognormal(mean=10.0, sigma=1.8, size=200)
+    transformer = SkewedTargetTransformer(skew_threshold=1.5)
+    res_pos = transformer.transform_target(y_pos)
+    assert res_pos["is_skewed"] is True
+    assert res_pos["method"] == "log1p"
+    assert len(res_pos["transformed_values"]) == 200
+
+    # Negative skewed target
+    y_neg = np.random.lognormal(mean=5.0, sigma=2.0, size=200) - 200.0
+    res_neg = transformer.transform_target(y_neg)
+    assert res_neg["is_skewed"] is True
+    assert res_neg["method"] == "yeo-johnson"

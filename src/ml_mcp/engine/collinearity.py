@@ -9,8 +9,64 @@ import pandas as pd
 class CollinearityFilter:
     """Detects and prunes highly collinear twin features using target-aware competitive drop."""
 
-    def __init__(self, threshold_corr: float = 0.90) -> None:
+    def __init__(self, threshold_corr: float = 0.90, vif_threshold: float = 10.0) -> None:
         self.threshold_corr = threshold_corr
+        self.vif_threshold = vif_threshold
+
+    def calculate_vif(
+        self,
+        df: pd.DataFrame,
+        num_cols: Optional[List[str]] = None,
+    ) -> Dict[str, float]:
+        """Calculates Variance Inflation Factor (VIF) for numeric features using pure NumPy.
+
+        Uses the relationship:
+            VIF_i = 1 / (1 - R_i^2) = (R^-1)_ii
+        where R is the correlation matrix of the features and (R^-1)_ii is the i-th
+        diagonal entry of the inverted correlation matrix.
+
+        Returns:
+            Dict mapping feature name to its calculated VIF value.
+        """
+        if num_cols is None:
+            num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+        if len(num_cols) < 2:
+            return {col: 1.0 for col in num_cols}
+
+        # Compute pairwise correlation matrix safely
+        corr_df = df[num_cols].corr()
+        corr_matrix = corr_df.values
+
+        # Clean NaNs in correlation matrix (e.g. constant columns)
+        if np.isnan(corr_matrix).any():
+            corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
+            np.fill_diagonal(corr_matrix, 1.0)
+
+        # Invert correlation matrix using pseudo-inverse if singular
+        try:
+            cond = np.linalg.cond(corr_matrix)
+            if np.isinf(cond) or cond > 1e12 or np.isnan(cond):
+                inv_corr = np.linalg.pinv(corr_matrix)
+            else:
+                inv_corr = np.linalg.inv(corr_matrix)
+        except np.linalg.LinAlgError:
+            inv_corr = np.linalg.pinv(corr_matrix)
+
+        # The diagonal elements of R^-1 are VIF_i = 1 / (1 - R_i^2)
+        vif_diagonal = np.diag(inv_corr)
+
+        # Floor at 1.0 since theoretical minimum VIF is 1.0 (zero correlation)
+        vif_diagonal = np.where(vif_diagonal < 1.0, 1.0, vif_diagonal)
+
+        vif_dict: Dict[str, float] = {}
+        for idx, col in enumerate(num_cols):
+            vif_val = float(vif_diagonal[idx])
+            if np.isnan(vif_val):
+                vif_val = float("inf")
+            vif_dict[col] = round(vif_val, 2)
+
+        return vif_dict
 
     def filter_collinearity(
         self,
@@ -32,7 +88,21 @@ class CollinearityFilter:
 
         num_cols = feature_df.select_dtypes(include=[np.number]).columns.tolist()
         if len(num_cols) < 2:
-            return df, {"collinear_pairs": [], "dropped_features": []}
+            return df, {
+                "threshold_corr": self.threshold_corr,
+                "vif_threshold": self.vif_threshold,
+                "vif_scores": {col: 1.0 for col in num_cols},
+                "high_vif_features": [],
+                "collinear_pairs": [],
+                "dropped_features": [],
+                "remaining_features_count": len(feature_df.columns),
+            }
+
+        # Calculate pure NumPy VIF scores for all numeric features
+        vif_scores = self.calculate_vif(feature_df, num_cols)
+        high_vif_features = [
+            col for col, score in vif_scores.items() if score >= self.vif_threshold
+        ]
 
         # Compute pairwise correlation matrix safely
         corr_matrix = feature_df[num_cols].corr().abs()
@@ -103,7 +173,10 @@ class CollinearityFilter:
             pruned_df[target_column] = y
 
         report = {
-            "threshold": self.threshold_corr,
+            "threshold_corr": self.threshold_corr,
+            "vif_threshold": self.vif_threshold,
+            "vif_scores": vif_scores,
+            "high_vif_features": high_vif_features,
             "collinear_pairs": collinear_pairs,
             "dropped_features": list(dropped_set),
             "remaining_features_count": len(remaining_cols),
