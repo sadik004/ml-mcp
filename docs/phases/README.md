@@ -29,6 +29,7 @@ flowchart LR
 - **Topic 2:** [ml_handle_text_features](phase-02-feature-engineering/ml_handle_text_features.md) — TF-IDF and SBERT embedding extraction for high-cardinality text columns.
 - **Topic 3:** [ml_balance_classes](phase-02-feature-engineering/ml_balance_classes.md) — SMOTE, ADASYN, and class weight balancing for highly imbalanced labels.
 - **Topic 4:** [ml_synthesize_features](phase-02-feature-engineering/ml_synthesize_features.md) — Automated feature crosses, polynomial combinations, and domain synthesis.
+- **Topic 5:** [ml_transform_target](phase-02-feature-engineering/ml_transform_target.md) — Skewed continuous target normalization via log1p & negative-protected Yeo-Johnson power transform.
 
 ---
 
