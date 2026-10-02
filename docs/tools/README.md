@@ -17,6 +17,7 @@ Comprehensive architectural guides, human histories, mathematical foundations, p
 | **`ml_synthesize_features`** | Feature Synthesis & Crosses | [ml_synthesize_features.md](ml_synthesize_features.md) |
 | **`ml_benchmark_models`** | Model Benchmarking & Stacking | [ml_benchmark_models.md](ml_benchmark_models.md) |
 | **`ml_tune_hyperparameters`** | Bayesian Optimization & Tuning | [ml_tune_hyperparameters.md](ml_tune_hyperparameters.md) |
+| **`ml_create_ensemble`** | Stacking Ensemble & Meta-Learning | [ml_create_ensemble.md](ml_create_ensemble.md) |
 | **`ml_pseudo_label_loop`** | Semi-Supervised Learning & Refinement | [ml_pseudo_label_loop.md](ml_pseudo_label_loop.md) |
 
 ---
