@@ -1,4 +1,4 @@
-﻿# ML-MCP Phased Architecture & Topic Curriculum
+# ML-MCP Phased Architecture & Topic Curriculum
 
 An enterprise-grade, phased breakdown of the machine learning lifecycle implemented in `ml-mcp`. Each phase represents an architectural milestone containing specialized topic guides.
 
@@ -24,20 +24,25 @@ flowchart LR
 
 ### ⚙️ [Phase 2: Feature Engineering & Preprocessing](phase-02-feature-engineering/)
 > **Mission:** Transforming raw tabular data, NLP feature extraction, class balancing, and automated defensive pipelines.
-- *Upcoming topics: `ml_auto_clean_and_pipe`, `ml_handle_text_features`, `ml_balance_classes`, `ml_synthesize_features`.*
+- **Topic 1:** [ml_auto_clean_and_pipe](phase-02-feature-engineering/ml_auto_clean_and_pipe.md) — End-to-end scikit-learn ColumnTransformer pipeline generation with automated type inference.
+- **Topic 2:** [ml_handle_text_features](phase-02-feature-engineering/ml_handle_text_features.md) — TF-IDF and SBERT embedding extraction for high-cardinality text columns.
+- **Topic 3:** [ml_balance_classes](phase-02-feature-engineering/ml_balance_classes.md) — SMOTE, ADASYN, and class weight balancing for highly imbalanced labels.
+- **Topic 4:** [ml_synthesize_features](phase-02-feature-engineering/ml_synthesize_features.md) — Automated feature crosses, polynomial combinations, and domain synthesis.
 
 ---
 
 ### 🏆 [Phase 3: Model Training, Benchmarking & Refinement](phase-03-model-training-and-refinement/)
 > **Mission:** Competitive arena cross-validation, hyperparameter tuning, cloud GPU execution, and semi-supervised refinement.
 - **Topic 1:** [ml_benchmark_models](phase-03-model-training-and-refinement/ml_benchmark_models.md) — 8-model competitive arena, overfitting guards, latency profiling & stacking.
-- **Topic 2:** [ml_pseudo_label_loop](phase-03-model-training-and-refinement/ml_pseudo_label_loop.md) — Harvesting >=98% confident unlabelled predictions to boost dataset size and accuracy.
+- **Topic 2:** [ml_tune_hyperparameters](phase-03-model-training-and-refinement/ml_tune_hyperparameters.md) — Bayesian Optimization via Optuna TPE sampler with MedianPruner early stopping.
+- **Topic 3:** [ml_pseudo_label_loop](phase-03-model-training-and-refinement/ml_pseudo_label_loop.md) — Harvesting >=98% confident unlabelled predictions to boost dataset size and accuracy.
+- *Upcoming topic: `ml_create_ensemble`.*
 
 ---
 
 ### 🛡️ [Phase 4: Validation, Risk & AI Safety](phase-04-validation-and-safety/)
 > **Mission:** Conformal risk control, probability calibration, decision thresholds, stress testing, and out-of-distribution detection.
-- *Upcoming topics: `ml_conformal_risk_control`, `ml_calibrate_probabilities`, `ml_explain_predictions`, `ml_detect_ood`.*
+- *Upcoming topics: `ml_conformal_risk_control`, `ml_calibrate_probabilities`, `ml_explain_predictions`, `ml_detect_ood`, `ml_tune_threshold_and_errors`.*
 
 ---
 
