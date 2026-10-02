@@ -34,6 +34,7 @@ def test_all_25_tools_registered():
         "ml_auto_clean_and_pipe",
         "ml_balance_classes",
         "ml_synthesize_features",
+        "ml_prune_features",
         "ml_transform_target",
         "ml_benchmark_models",
         "ml_create_ensemble",
