@@ -20,7 +20,8 @@ flowchart LR
 - **Topic 2:** [ml_detect_target_leakage](phase-01-data-audit-and-hygiene/ml_detect_target_leakage.md) — Pearson correlation & mutual information leakage detection.
 - **Topic 3:** [ml_check_collinearity](phase-01-data-audit-and-hygiene/ml_check_collinearity.md) — Pure NumPy VIF calculation, multicollinearity detection & competitive twin feature pruning.
 - **Topic 4:** [ml_detect_label_errors](phase-01-data-audit-and-hygiene/ml_detect_label_errors.md) — MIT Confident Learning label error and noise detection via out-of-fold self-confidence thresholds.
-- **Topic 5:** [ml_track_lineage](phase-01-data-audit-and-hygiene/ml_track_lineage.md) — SHA-256 dataset fingerprinting and Git-linked provenance metadata.
+- **Topic 5:** [ml_verify_constraints](phase-01-data-audit-and-hygiene/ml_verify_constraints.md) — Amazon Deequ physical feasibility constraints and automated IQR statistical boundary verification.
+- **Topic 6:** [ml_track_lineage](phase-01-data-audit-and-hygiene/ml_track_lineage.md) — SHA-256 dataset fingerprinting and Git-linked provenance metadata.
 
 ---
 
