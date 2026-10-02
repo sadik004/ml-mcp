@@ -29,3 +29,10 @@ __all__ = [
     "ColabNotebookDTO",
     "ColabSessionDTO",
 ]
+
+from ml_mcp.schemas.audit import (
+    ColumnConstraintViolationDTO,
+    ConstraintValidationReportDTO,
+    LabelErrorReportDTO,
+    LabelErrorSampleDTO,
+)

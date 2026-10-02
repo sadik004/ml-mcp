@@ -17,6 +17,8 @@ from ml_mcp.engine.calibrator import ProbabilityCalibrator
 from ml_mcp.engine.checkpoint_manager import CheckpointManager
 from ml_mcp.engine.colab_generator import ColabNotebookGenerator
 from ml_mcp.engine.collinearity import CollinearityFilter
+from ml_mcp.engine.constraint_validator import ConstraintValidator
+from ml_mcp.engine.label_error_detector import LabelErrorDetector
 from ml_mcp.engine.dashboard_generator import DashboardGenerator
 from ml_mcp.engine.docker_generator import DockerGenerator
 from ml_mcp.engine.drift_monitor import DataDriftMonitor
@@ -111,6 +113,41 @@ def register_all_tools(mcp: FastMCP) -> None:
             return sanitize_for_json(res)
         except Exception as e:
             return format_error_envelope(e, "ml_check_collinearity", ["csv_path"])
+
+    # ml_detect_label_errors (MIT Confident Learning)
+    @mcp.tool()
+    async def ml_detect_label_errors(
+        csv_path: str,
+        target_column: str,
+        cv_splits: int = 5,
+        view: Literal["compact", "detailed"] = "compact",
+    ) -> Dict[str, Any]:
+        """Detect corrupt/noisy ground truth training labels via MIT Confident Learning."""
+        try:
+            df = pd.read_csv(csv_path)
+            detector = LabelErrorDetector(cv_splits=cv_splits)
+            report = detector.detect_label_errors(df, target_column=target_column)
+            res = report.to_compact() if view == "compact" else report.model_dump()
+            return sanitize_for_json(res)
+        except Exception as e:
+            return format_error_envelope(e, "ml_detect_label_errors", ["csv_path", "target_column"])
+
+    # ml_verify_constraints (Amazon Deequ Physical Constraints)
+    @mcp.tool()
+    async def ml_verify_constraints(
+        csv_path: str,
+        constraints: Optional[Dict[str, Dict[str, Any]]] = None,
+        view: Literal["compact", "detailed"] = "compact",
+    ) -> Dict[str, Any]:
+        """Validate physical domain limits and automated Amazon Deequ IQR range constraints."""
+        try:
+            df = pd.read_csv(csv_path)
+            validator = ConstraintValidator(constraints=constraints)
+            report = validator.validate_constraints(df)
+            res = report.to_compact() if view == "compact" else report.model_dump()
+            return sanitize_for_json(res)
+        except Exception as e:
+            return format_error_envelope(e, "ml_verify_constraints", ["csv_path"])
 
     # 3. ml_handle_text_features
     @mcp.tool()

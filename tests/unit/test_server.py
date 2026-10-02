@@ -28,6 +28,8 @@ def test_all_25_tools_registered():
         "ml_audit_dataset",
         "ml_detect_target_leakage",
         "ml_check_collinearity",
+        "ml_detect_label_errors",
+        "ml_verify_constraints",
         "ml_handle_text_features",
         "ml_auto_clean_and_pipe",
         "ml_balance_classes",

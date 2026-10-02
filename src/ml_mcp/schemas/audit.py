@@ -98,3 +98,72 @@ class TextFeatureReportDTO(BaseDTO):
             "column_count": len(self.text_columns),
             "recommended_strategy": self.recommended_strategy,
         }
+
+
+class LabelErrorSampleDTO(BaseDTO):
+    """Information regarding an individual detected corrupted label."""
+
+    sample_index: int = Field(description="Row index of the suspicious sample")
+    given_label: Any = Field(description="Original annotated ground truth label")
+    suggested_label: Any = Field(description="Mathematically estimated true label")
+    confidence: float = Field(description="Model confidence for suggested label")
+
+
+class LabelErrorReportDTO(BaseDTO):
+    """MIT Confident Learning diagnostic report for label noise in dataset."""
+
+    total_samples: int = Field(description="Total evaluated samples")
+    total_errors: int = Field(description="Total detected label errors")
+    error_rate: float = Field(description="Estimated label noise ratio")
+    class_thresholds: Dict[str, float] = Field(
+        default_factory=dict, description="Per-class self-confidence thresholds t_j"
+    )
+    flagged_samples: List[LabelErrorSampleDTO] = Field(
+        default_factory=list, description="Samples flagged as label errors"
+    )
+
+    def to_compact(self) -> Dict[str, Any]:
+        return {
+            "total_samples": self.total_samples,
+            "total_errors": self.total_errors,
+            "error_rate": round(self.error_rate, 4),
+            "class_thresholds": {k: round(v, 4) for k, v in self.class_thresholds.items()},
+            "flagged_count": len(self.flagged_samples),
+        }
+
+
+class ColumnConstraintViolationDTO(BaseDTO):
+    """Constraint validation violation metrics for a single column."""
+
+    column: str = Field(description="Column name")
+    violation_count: int = Field(description="Number of rows violating constraint")
+    violation_rate: float = Field(description="Fraction of rows violating constraint")
+    rule_broken: str = Field(description="Description of violated constraint rule")
+
+
+class ConstraintValidationReportDTO(BaseDTO):
+    """Amazon Deequ-style physical and domain constraint verification report."""
+
+    total_rows: int = Field(description="Total evaluated rows")
+    passed: bool = Field(description="True if zero violations found across all columns")
+    total_violations: int = Field(description="Total violation count across all columns")
+    violations_by_column: List[ColumnConstraintViolationDTO] = Field(
+        default_factory=list, description="Detailed per-column violation breakdown"
+    )
+
+    def to_compact(self) -> Dict[str, Any]:
+        return {
+            "total_rows": self.total_rows,
+            "passed": self.passed,
+            "total_violations": self.total_violations,
+            "violation_columns_count": len(self.violations_by_column),
+            "violations_summary": [
+                {
+                    "column": v.column,
+                    "violations": v.violation_count,
+                    "rate": round(v.violation_rate, 4),
+                    "rule": v.rule_broken,
+                }
+                for v in self.violations_by_column
+            ],
+        }
