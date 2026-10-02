@@ -49,6 +49,34 @@ logger = logging.getLogger(__name__)
 _ACTIVE_JOBS: Dict[str, Any] = {}
 
 
+def _persist_processed_dataframe(
+    df: pd.DataFrame,
+    source_path: str,
+    suffix: str,
+    output_path: Optional[str] = None,
+) -> str:
+    """Atomically saves processed DataFrame to disk and returns absolute path."""
+    import re
+    from pathlib import Path
+    from ml_mcp.config import get_settings
+
+    if output_path:
+        out_file = Path(output_path).resolve()
+    else:
+        src = Path(source_path).resolve()
+        stem = src.stem
+        # Avoid chaining double suffixes like _synthesized_synthesized
+        clean_stem = re.sub(r'_(synthesized|pruned|filtered)$', '', stem)
+        settings = get_settings()
+        dest_dir = Path(settings.drive_root).resolve() / "processed"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        out_file = dest_dir / f"{clean_stem}_{suffix}.csv"
+
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_file, index=False)
+    return str(out_file)
+
+
 def register_all_tools(mcp: FastMCP) -> None:
     """Register all 25 production tools onto FastMCP instance."""
 
@@ -93,6 +121,7 @@ def register_all_tools(mcp: FastMCP) -> None:
         target_column: Optional[str] = None,
         vif_threshold: float = 10.0,
         correlation_cutoff: float = 0.90,
+        output_path: Optional[str] = None,
         view: Literal["compact", "detailed"] = "compact",
     ) -> Dict[str, Any]:
         """Detect multicollinear features using pure NumPy VIF and Pairwise Competitive Drop Rule."""
@@ -100,8 +129,18 @@ def register_all_tools(mcp: FastMCP) -> None:
             df = pd.read_csv(csv_path)
             collin_filter = CollinearityFilter(threshold_corr=correlation_cutoff, vif_threshold=vif_threshold)
             pruned_df, report = collin_filter.filter_collinearity(df, target_column=target_column)
+            
+            # Dataset chaining: Persist pruned dataframe to disk
+            saved_csv_path = _persist_processed_dataframe(
+                pruned_df,
+                source_path=csv_path,
+                suffix="filtered",
+                output_path=output_path,
+            )
+
             if view == "compact":
                 res = {
+                    "processed_csv_path": saved_csv_path,
                     "vif_threshold": report["vif_threshold"],
                     "correlation_cutoff": report["threshold_corr"],
                     "high_vif_features": report["high_vif_features"],
@@ -110,7 +149,7 @@ def register_all_tools(mcp: FastMCP) -> None:
                     "remaining_features_count": report["remaining_features_count"],
                 }
             else:
-                res = report
+                res = {**report, "processed_csv_path": saved_csv_path}
             return sanitize_for_json(res)
         except Exception as e:
             return format_error_envelope(e, "ml_check_collinearity", ["csv_path"])
@@ -211,6 +250,7 @@ def register_all_tools(mcp: FastMCP) -> None:
         period: float = 24.0,
         ratio_pairs: Optional[List[List[str]]] = None,
         group_specs: Optional[List[Dict[str, Any]]] = None,
+        output_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate cyclical sin/cos features, safe ratios, and ExploreKit group aggregations."""
         try:
@@ -246,8 +286,17 @@ def register_all_tools(mcp: FastMCP) -> None:
 
             new_columns = [c for c in synthesized_df.columns if c not in df.columns]
 
+            # Dataset chaining: Persist synthesized dataframe to disk
+            saved_csv_path = _persist_processed_dataframe(
+                synthesized_df,
+                source_path=csv_path,
+                suffix="synthesized",
+                output_path=output_path,
+            )
+
             return sanitize_for_json({
                 "status": "success",
+                "processed_csv_path": saved_csv_path,
                 "synthesized_columns_count": len(new_columns),
                 "synthesized_columns": new_columns,
                 "total_columns": len(synthesized_df.columns),
@@ -263,6 +312,7 @@ def register_all_tools(mcp: FastMCP) -> None:
         top_k: Optional[int] = None,
         importance_threshold: float = 0.005,
         task_type: Literal["auto", "classification", "regression"] = "auto",
+        output_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Prune noisy and redundant features using gradient-boosted importance (OpenFE architecture)."""
         try:
@@ -278,10 +328,28 @@ def register_all_tools(mcp: FastMCP) -> None:
                 task_type=task_type,
             )
             selector.fit(X, y)
+            X_pruned = selector.transform(X)
+            
+            # Re-attach target column to pruned features
+            pruned_df = X_pruned.copy() if isinstance(X_pruned, pd.DataFrame) else pd.DataFrame(X_pruned, columns=selector.selected_features_)
+            pruned_df[target_column] = y.values
+
+            # Dataset chaining: Persist pruned dataframe to disk
+            saved_csv_path = _persist_processed_dataframe(
+                pruned_df,
+                source_path=csv_path,
+                suffix="pruned",
+                output_path=output_path,
+            )
+
             report = selector.get_report()
+            data_dump = report.model_dump()
+            data_dump["processed_csv_path"] = saved_csv_path
+
             return sanitize_for_json({
                 "status": "success",
-                "data": report.model_dump(),
+                "processed_csv_path": saved_csv_path,
+                "data": data_dump,
             })
         except Exception as e:
             return format_error_envelope(e, "ml_prune_features", ["csv_path", "target_column"])
