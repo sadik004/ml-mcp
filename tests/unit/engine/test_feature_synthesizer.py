@@ -149,3 +149,59 @@ def test_groupby_catboost_smoothing_and_cardinality_guard():
     expected_smooth_mean = (10 * 100.0 + 10.0 * 19.0) / 20.0
     diff_val = cat_b_row["val_diff_from_cat_col_mean"]
     assert abs((cat_b_row["val"] - expected_smooth_mean) - diff_val) < 1e-4
+
+
+from ml_mcp.engine.feature_synthesizer import (
+    LatentManifoldOutlierTransformer,
+    AutomaticTemporalTransformer,
+)
+
+
+def test_latent_manifold_outlier_transformer_l2_norm():
+    assert issubclass(LatentManifoldOutlierTransformer, (BaseEstimator, TransformerMixin))
+
+    # Create dummy PCA feature block V1..V6
+    np.random.seed(42)
+    df = pd.DataFrame({f'V{i}': np.random.normal(0, 1, 50) for i in range(1, 7)})
+    df['unrelated_feature'] = 100.0
+
+    transformer = LatentManifoldOutlierTransformer(feature_prefixes=['V'], min_block_size=4)
+    transformed = transformer.fit_transform(df)
+
+    assert 'V_l2_norm' in transformed.columns
+    assert 'V_mahalanobis_proxy' in transformed.columns
+    assert not transformed['V_l2_norm'].isna().any()
+    assert not transformed['V_mahalanobis_proxy'].isna().any()
+
+    # Outlier sample with huge vector magnitude
+    outlier_df = pd.DataFrame({f'V{i}': [10.0] * 6 for i in range(1, 7)})
+    outlier_transformed = transformer.transform(outlier_df)
+    expected_norm = np.sqrt(6 * (10.0 ** 2))
+    assert pytest.approx(outlier_transformed.loc[0, 'V_l2_norm'], abs=1e-3) == expected_norm
+
+
+def test_automatic_temporal_transformer():
+    assert issubclass(AutomaticTemporalTransformer, (BaseEstimator, TransformerMixin))
+
+    # Create dataframe with elapsed seconds over 24 hours (86,400s)
+    df = pd.DataFrame({
+        'Time': [0.0, 7200.0, 43200.0, 86400.0],  # 0h, 2h, 12h, 24h
+        'amount': [50.0, 100.0, 20.0, 10.0],
+    })
+
+    transformer = AutomaticTemporalTransformer(time_col_names=['time'], min_seconds_range=3600.0)
+    transformed = transformer.fit_transform(df)
+
+    assert 'Time_hour' in transformed.columns
+    assert 'Time_hour_sin' in transformed.columns
+    assert 'Time_hour_cos' in transformed.columns
+
+    # 0h (midnight): sin(0)=0, cos(0)=1
+    assert pytest.approx(transformed.loc[0, 'Time_hour'], abs=1e-3) == 0.0
+    assert pytest.approx(transformed.loc[0, 'Time_hour_sin'], abs=1e-3) == 0.0
+    assert pytest.approx(transformed.loc[0, 'Time_hour_cos'], abs=1e-3) == 1.0
+
+    # 12h (noon): hour=12, sin(pi)=0, cos(pi)=-1
+    assert pytest.approx(transformed.loc[2, 'Time_hour'], abs=1e-3) == 12.0
+    assert pytest.approx(transformed.loc[2, 'Time_hour_sin'], abs=1e-3) == 0.0
+    assert pytest.approx(transformed.loc[2, 'Time_hour_cos'], abs=1e-3) == -1.0

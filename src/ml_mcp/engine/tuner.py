@@ -48,6 +48,8 @@ def _get_sklearn_scoring(metric: str, task_type: str) -> str:
     metric_map = {
         "roc_auc": "roc_auc",
         "auc": "roc_auc",
+        "pr_auc": "average_precision",
+        "average_precision": "average_precision",
         "accuracy": "accuracy",
         "f1": "f1_weighted" if task_type == "classification" else "r2",
         "f1_macro": "f1_macro",

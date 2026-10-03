@@ -298,3 +298,114 @@ class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
                 X_out[z_col] = z_val
 
         return X_out
+
+
+class LatentManifoldOutlierTransformer(BaseEstimator, TransformerMixin):
+    """
+    Computes geometrical latent space manifold distance and outlier energy for anonymous/PCA feature blocks.
+    
+    Theoretical Basis:
+        - Euclidean L2 Norm: ||V||_2 = sqrt(sum(V_i^2))
+        - Mahalanobis / Variance-weighted normalized anomaly score
+    """
+
+    def __init__(
+        self,
+        feature_prefixes: Optional[List[str]] = None,
+        min_block_size: int = 4,
+        epsilon: float = 1e-6,
+    ) -> None:
+        self.feature_prefixes = feature_prefixes or ["V", "pca", "comp", "feat_"]
+        self.min_block_size = min_block_size
+        self.epsilon = epsilon
+        self.detected_blocks_: Dict[str, List[str]] = {}
+        self.block_stats_: Dict[str, Dict[str, np.ndarray]] = {}
+
+    def fit(self, X: pd.DataFrame, y: Any = None) -> "LatentManifoldOutlierTransformer":
+        self.detected_blocks_ = {}
+        self.block_stats_ = {}
+        if not isinstance(X, pd.DataFrame):
+            return self
+
+        # Detect candidate feature blocks
+        cols = list(X.columns)
+        for prefix in self.feature_prefixes:
+            matching = [c for c in cols if c.startswith(prefix) and pd.api.types.is_numeric_dtype(X[c])]
+            if len(matching) >= self.min_block_size:
+                clean_name = prefix.rstrip("_")
+                self.detected_blocks_[clean_name] = matching
+                # Store training mean and std for variance-weighted Mahalanobis proxy
+                arr = X[matching].to_numpy(dtype=np.float64)
+                means = np.nanmean(arr, axis=0)
+                stds = np.nanstd(arr, axis=0)
+                stds = np.where(stds < self.epsilon, 1.0, stds)
+                self.block_stats_[clean_name] = {"mean": means, "std": stds}
+
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        X_out = X.copy()
+        for block_name, cols in self.detected_blocks_.items():
+            if all(c in X_out.columns for c in cols):
+                arr = X_out[cols].to_numpy(dtype=np.float64)
+                arr = np.nan_to_num(arr, nan=0.0)
+
+                # 1. Euclidean L2 Norm
+                l2_norm = np.linalg.norm(arr, axis=1)
+                X_out[f"{block_name}_l2_norm"] = l2_norm
+
+                # 2. Normalized Anomaly / Mahalanobis Proxy
+                if block_name in self.block_stats_:
+                    means = self.block_stats_[block_name]["mean"]
+                    stds = self.block_stats_[block_name]["std"]
+                    z_scores = (arr - means) / stds
+                    mahalanobis_proxy = np.sqrt(np.sum(z_scores ** 2, axis=1))
+                    X_out[f"{block_name}_mahalanobis_proxy"] = mahalanobis_proxy
+
+        return X_out
+
+
+class AutomaticTemporalTransformer(BaseEstimator, TransformerMixin):
+    """
+    Automatically detects elapsed time / continuous seconds columns and synthesizes:
+    1. Hour of Day: (Time // 3600) % 24
+    2. Cyclical Harmonics: Hour_Sin & Hour_Cos
+    """
+
+    def __init__(
+        self,
+        time_col_names: Optional[List[str]] = None,
+        min_seconds_range: float = 3600.0,
+    ) -> None:
+        self.time_col_names = time_col_names or ["time", "timestamp", "seconds", "sec", "elapsed_time"]
+        self.min_seconds_range = min_seconds_range
+        self.detected_time_cols_: List[str] = []
+
+    def fit(self, X: pd.DataFrame, y: Any = None) -> "AutomaticTemporalTransformer":
+        self.detected_time_cols_ = []
+        if not isinstance(X, pd.DataFrame):
+            return self
+
+        for col in X.columns:
+            col_lower = col.lower()
+            if any(cand == col_lower or cand in col_lower for cand in self.time_col_names):
+                if pd.api.types.is_numeric_dtype(X[col]):
+                    col_range = float(X[col].max() - X[col].min()) if len(X[col]) > 0 else 0.0
+                    if col_range >= self.min_seconds_range:
+                        self.detected_time_cols_.append(col)
+
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        X_out = X.copy()
+        for col in self.detected_time_cols_:
+            if col in X_out.columns:
+                series = pd.to_numeric(X_out[col], errors="coerce").fillna(0.0)
+                hour = (series // 3600.0) % 24.0
+                theta = (2.0 * np.pi * hour) / 24.0
+
+                X_out[f"{col}_hour"] = hour
+                X_out[f"{col}_hour_sin"] = np.sin(theta)
+                X_out[f"{col}_hour_cos"] = np.cos(theta)
+
+        return X_out
