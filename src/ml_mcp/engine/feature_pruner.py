@@ -1,4 +1,4 @@
-"""OpenFE-inspired Gradient & Tree Importance Feature Pruner (Zhang et al., ICML 2023)."""
+"""OpenFE-inspired Gradient & Tree Importance Feature Pruner with OOF Permutation (Zhang et al. ICML 2023; Breiman 2001; Molnar 2020)."""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -7,24 +7,30 @@ import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 from sklearn.inspection import permutation_importance
+from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.preprocessing import OrdinalEncoder
 
 from ml_mcp.schemas.feature import FeaturePruningReportDTO
 
 
 class GradientFeatureSelector(BaseEstimator, TransformerMixin):
-    """Gradient and tree importance feature selector following OpenFE architecture."""
+    """
+    Gradient and tree importance feature selector following OpenFE architecture.
+    Evaluates permutation importance strictly Out-Of-Fold (OOF) to prevent memorization trap.
+    """
 
     def __init__(
         self,
         top_k: Optional[int] = None,
         importance_threshold: float = 0.005,
         task_type: str = "auto",
+        cv: int = 3,
         random_state: int = 42,
     ) -> None:
         self.top_k = top_k
         self.importance_threshold = importance_threshold
         self.task_type = task_type
+        self.cv = cv
         self.random_state = random_state
 
         self.selected_features_: List[str] = []
@@ -67,34 +73,80 @@ class GradientFeatureSelector(BaseEstimator, TransformerMixin):
                 reshaped = series.astype(str).to_numpy().reshape(-1, 1)
                 X_encoded[col] = enc.fit_transform(reshaped).ravel()
 
-        # 3. Fit fast baseline HistGradientBooster
-        if self.task_type_ == "classification":
-            booster = HistGradientBoostingClassifier(
-                max_iter=30,
-                max_depth=5,
-                random_state=self.random_state,
-            )
+        X_mat = X_encoded.to_numpy()
+        n_samples = len(X_mat)
+
+        # 3. Determine if Out-Of-Fold (OOF) cross-validation is feasible (Breiman 2001; Molnar 2020)
+        can_cv = self.cv > 1 and n_samples >= max(15, self.cv * 3)
+        if can_cv and self.task_type_ == "classification":
+            _, class_counts = np.unique(y_arr, return_counts=True)
+            if np.min(class_counts) < self.cv:
+                can_cv = False
+
+        if can_cv:
+            if self.task_type_ == "classification":
+                splitter = StratifiedKFold(n_splits=self.cv, shuffle=True, random_state=self.random_state)
+            else:
+                splitter = KFold(n_splits=self.cv, shuffle=True, random_state=self.random_state)
+
+            fold_importances: List[np.ndarray] = []
+            for train_idx, val_idx in splitter.split(X_mat, y_arr):
+                X_tr, y_tr = X_mat[train_idx], y_arr[train_idx]
+                X_va, y_va = X_mat[val_idx], y_arr[val_idx]
+
+                if self.task_type_ == "classification":
+                    booster = HistGradientBoostingClassifier(
+                        max_iter=30,
+                        max_depth=5,
+                        random_state=self.random_state,
+                    )
+                else:
+                    booster = HistGradientBoostingRegressor(
+                        max_iter=30,
+                        max_depth=5,
+                        random_state=self.random_state,
+                    )
+                booster.fit(X_tr, y_tr)
+
+                # Evaluate permutation importance strictly on unseen validation fold
+                perm = permutation_importance(
+                    booster,
+                    X_va,
+                    y_va,
+                    n_repeats=3,
+                    random_state=self.random_state,
+                    n_jobs=1,
+                )
+                fold_importances.append(perm.importances_mean)
+
+            raw_importances = np.maximum(0.0, np.mean(fold_importances, axis=0))
         else:
-            booster = HistGradientBoostingRegressor(
-                max_iter=30,
-                max_depth=5,
+            # Fallback for small datasets or unbalanced singletons
+            if self.task_type_ == "classification":
+                booster = HistGradientBoostingClassifier(
+                    max_iter=30,
+                    max_depth=5,
+                    random_state=self.random_state,
+                )
+            else:
+                booster = HistGradientBoostingRegressor(
+                    max_iter=30,
+                    max_depth=5,
+                    random_state=self.random_state,
+                )
+            booster.fit(X_mat, y_arr)
+
+            perm = permutation_importance(
+                booster,
+                X_mat,
+                y_arr,
+                n_repeats=3,
                 random_state=self.random_state,
+                n_jobs=1,
             )
+            raw_importances = np.maximum(0.0, perm.importances_mean)
 
-        booster.fit(X_encoded.to_numpy(), y_arr)
-
-        # 4. Extract feature importances via permutation importance
-        perm = permutation_importance(
-            booster,
-            X_encoded.to_numpy(),
-            y_arr,
-            n_repeats=3,
-            random_state=self.random_state,
-            n_jobs=1,
-        )
-        raw_importances = np.maximum(0.0, perm.importances_mean)
         total_imp = float(np.sum(raw_importances))
-
         if total_imp > 0:
             norm_importances = raw_importances / total_imp
         else:
@@ -104,7 +156,7 @@ class GradientFeatureSelector(BaseEstimator, TransformerMixin):
             col: round(float(norm_importances[i]), 5) for i, col in enumerate(cols)
         }
 
-        # 5. Selection and Pruning Logic
+        # 4. Selection and Pruning Logic
         sorted_features = sorted(cols, key=lambda c: self.feature_importances_[c], reverse=True)
 
         if self.top_k is not None and self.top_k > 0:

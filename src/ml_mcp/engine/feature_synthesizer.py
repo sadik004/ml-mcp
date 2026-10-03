@@ -1,46 +1,34 @@
-"""Scikit-Learn compliant Feature Synthesizer for cyclical time projections, safe ratios, and ExploreKit group aggregations."""
+"""Feature synthesis module with cyclical, ratio, and CatBoost/ExploreKit empirical Bayes aggregations."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
 class CyclicalFeatureTransformer(BaseEstimator, TransformerMixin):
-    """Projects periodic temporal features into continuous circular space via sin and cos."""
+    """Trigonometric encoding for cyclical temporal features (hours, days, months)."""
 
-    def __init__(
-        self,
-        time_periods: Optional[Dict[str, float]] = None,
-        period: Optional[float] = None,
-    ) -> None:
+    def __init__(self, time_periods: Optional[Dict[str, float]] = None) -> None:
         self.time_periods = time_periods or {}
-        self.period = period
 
     def fit(self, X: pd.DataFrame, y: Any = None) -> "CyclicalFeatureTransformer":
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X_out = X.copy()
-        if self.time_periods:
-            for col, period in self.time_periods.items():
-                if col in X_out.columns:
-                    series = pd.to_numeric(X_out[col], errors="coerce").fillna(0.0)
-                    radians = 2.0 * np.pi * series / float(period)
-                    X_out[f"{col}_sin"] = np.sin(radians)
-                    X_out[f"{col}_cos"] = np.cos(radians)
-        elif self.period is not None:
-            for col in X_out.columns:
+        for col, period in self.time_periods.items():
+            if col in X_out.columns:
                 series = pd.to_numeric(X_out[col], errors="coerce").fillna(0.0)
-                radians = 2.0 * np.pi * series / float(self.period)
-                X_out[f"{col}_sin"] = np.sin(radians)
-                X_out[f"{col}_cos"] = np.cos(radians)
+                theta = (2.0 * np.pi * series) / float(period)
+                X_out[f"{col}_sin"] = np.sin(theta)
+                X_out[f"{col}_cos"] = np.cos(theta)
         return X_out
 
 
 class RatioFeatureTransformer(BaseEstimator, TransformerMixin):
-    """Computes interaction ratios with epsilon protection preventing division by zero."""
+    """Generates guarded pairwise interaction ratios with epsilon denominator protection."""
 
     def __init__(
         self,
@@ -55,34 +43,53 @@ class RatioFeatureTransformer(BaseEstimator, TransformerMixin):
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         X_out = X.copy()
-        for num_col, den_col, out_col in self.ratio_pairs:
+        for num_col, den_col, target_name in self.ratio_pairs:
             if num_col in X_out.columns and den_col in X_out.columns:
-                num = pd.to_numeric(X_out[num_col], errors="coerce").fillna(0.0)
-                den = pd.to_numeric(X_out[den_col], errors="coerce").fillna(0.0)
+                num_series = pd.to_numeric(X_out[num_col], errors="coerce").fillna(0.0)
+                den_series = pd.to_numeric(X_out[den_col], errors="coerce").fillna(0.0)
 
-                safe_den = np.where(np.abs(den) < self.epsilon, np.sign(den) * self.epsilon + (den == 0) * self.epsilon, den)
-                ratio_val = num / safe_den
-                ratio_val = np.nan_to_num(ratio_val, nan=0.0, posinf=1e8, neginf=-1e8)
-                X_out[out_col] = ratio_val
+                safe_denom = np.where(
+                    np.abs(den_series) < self.epsilon,
+                    np.sign(den_series) * self.epsilon + (den_series == 0) * self.epsilon,
+                    den_series,
+                )
+                ratio_val = num_series / safe_denom
+                ratio_val = np.nan_to_num(ratio_val, nan=0.0, posinf=1e6, neginf=-1e6)
+                X_out[target_name] = ratio_val
+
         return X_out
 
 
 class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
-    """Computes group-level aggregations and relative features based on ExploreKit architecture (Katz et al., IEEE ICDM 2016)."""
+    """
+    Computes group-level aggregations and relative features based on:
+    1. ExploreKit architecture (Katz et al., IEEE ICDM 2016): Candidate generation & cardinality filter.
+    2. CatBoost architecture (Prokhorenkova et al., NeurIPS 2018): Empirical Bayes m-estimate smoothing.
+    """
 
     def __init__(
         self,
         group_specs: Optional[List[Dict[str, Any]]] = None,
+        max_cardinality: int = 1000,
+        max_cardinality_ratio: float = 0.20,
+        smoothing: float = 0.0,
         epsilon: float = 1e-6,
     ) -> None:
         self.group_specs = group_specs or []
+        self.max_cardinality = max_cardinality
+        self.max_cardinality_ratio = max_cardinality_ratio
+        self.smoothing = smoothing
         self.epsilon = epsilon
+
         self.group_stats_: Dict[str, pd.DataFrame] = {}
         self.global_stats_: Dict[str, Dict[str, float]] = {}
+        self.skipped_specs_: List[Dict[str, Any]] = []
 
     def fit(self, X: pd.DataFrame, y: Any = None) -> "GroupByAggregationTransformer":
         self.group_stats_ = {}
         self.global_stats_ = {}
+        self.skipped_specs_ = []
+        n_rows = len(X)
 
         for i, spec in enumerate(self.group_specs):
             cat_col = spec.get("cat_col")
@@ -92,18 +99,32 @@ class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
             if not cat_col or not num_col or cat_col not in X.columns or num_col not in X.columns:
                 continue
 
+            # Cardinality Guard (ExploreKit ICDM 2016; CatBoost 2018)
+            cat_series = X[cat_col].dropna()
+            n_unique = int(cat_series.nunique())
+            ratio = n_unique / n_rows if n_rows > 0 else 1.0
+
+            is_high_ratio = bool(n_rows >= 50 and ratio >= self.max_cardinality_ratio)
+            if n_unique <= 1 or n_unique > self.max_cardinality or is_high_ratio:
+                self.skipped_specs_.append({
+                    "cat_col": cat_col,
+                    "num_col": num_col,
+                    "n_unique": n_unique,
+                    "unique_ratio": round(ratio, 4),
+                    "reason": "exceeds_max_cardinality" if n_unique > self.max_cardinality else (
+                        "high_cardinality_ratio" if is_high_ratio else "constant_column"
+                    ),
+                })
+                continue
+
             spec_key = f"{cat_col}__{num_col}__{i}"
             num_series = pd.to_numeric(X[num_col], errors="coerce")
             temp_df = pd.DataFrame({cat_col: X[cat_col], num_col: num_series})
 
-            # Calculate group stats strictly on training fold
-            grp = temp_df.groupby(cat_col, observed=False)[num_col].agg(aggs)
-            self.group_stats_[spec_key] = grp
-
-            # Calculate global fallback statistics for unseen categories during transform
+            # Calculate global fallback statistics strictly on training fold
             g_mean = float(num_series.mean()) if not np.isnan(num_series.mean()) else 0.0
             g_std = float(num_series.std(ddof=0)) if not np.isnan(num_series.std(ddof=0)) and num_series.std(ddof=0) > 0 else 1.0
-            
+
             fallback_dict: Dict[str, float] = {
                 "mean": g_mean,
                 "std": g_std,
@@ -119,6 +140,21 @@ class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
                     else:
                         fallback_dict[agg] = g_mean
             self.global_stats_[spec_key] = fallback_dict
+
+            # Compute standard group stats
+            requested_aggs = list(set(aggs + ["count", "mean"]))
+            grp = temp_df.groupby(cat_col, observed=False)[num_col].agg(requested_aggs)
+            if "std" in grp.columns:
+                grp["std"] = grp["std"].fillna(0.0)
+
+            # CatBoost-style Empirical Bayes m-estimate smoothing (Prokhorenkova et al. NeurIPS 2018):
+            m = float(self.smoothing)
+            if m > 0.0:
+                grp["smoothed_mean"] = (grp["count"] * grp["mean"] + m * g_mean) / (grp["count"] + m)
+            else:
+                grp["smoothed_mean"] = grp["mean"]
+
+            self.group_stats_[spec_key] = grp
 
         return self
 
@@ -149,24 +185,25 @@ class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
                     mapped = mapped.fillna(fallback_val)
                 else:
                     mapped = pd.Series(g_stats.get(agg, g_stats["mean"]), index=X_out.index)
-                
+
                 col_name = f"{num_col}_{agg}_by_{cat_col}"
                 X_out[col_name] = mapped
                 agg_series_dict[agg] = mapped
 
-            group_mean = agg_series_dict.get("mean", pd.Series(g_stats["mean"], index=X_out.index))
+            # Use smoothed mean for relative calculations to eliminate small-group variance
+            smoothed_mean = X_out[cat_col].map(grp["smoothed_mean"]).fillna(g_stats["mean"])
             group_std = agg_series_dict.get("std", pd.Series(g_stats["std"], index=X_out.index))
 
             if create_diff:
                 diff_col = f"{num_col}_diff_from_{cat_col}_mean"
-                X_out[diff_col] = num_series - group_mean
+                X_out[diff_col] = num_series - smoothed_mean
 
             if create_ratio:
                 ratio_col = f"{num_col}_ratio_to_{cat_col}_mean"
                 safe_mean = np.where(
-                    np.abs(group_mean) < self.epsilon,
-                    np.sign(group_mean) * self.epsilon + (group_mean == 0) * self.epsilon,
-                    group_mean
+                    np.abs(smoothed_mean) < self.epsilon,
+                    np.sign(smoothed_mean) * self.epsilon + (smoothed_mean == 0) * self.epsilon,
+                    smoothed_mean,
                 )
                 ratio_val = num_series / safe_mean
                 ratio_val = np.nan_to_num(ratio_val, nan=1.0, posinf=1e6, neginf=-1e6)
@@ -175,7 +212,7 @@ class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
             if create_zscore:
                 z_col = f"{num_col}_zscore_in_{cat_col}"
                 safe_std = np.where(np.abs(group_std) < self.epsilon, self.epsilon, group_std)
-                z_val = (num_series - group_mean) / safe_std
+                z_val = (num_series - smoothed_mean) / safe_std
                 z_val = np.nan_to_num(z_val, nan=0.0, posinf=10.0, neginf=-10.0)
                 X_out[z_col] = z_val
 

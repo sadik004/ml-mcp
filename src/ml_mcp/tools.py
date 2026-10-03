@@ -250,6 +250,8 @@ def register_all_tools(mcp: FastMCP) -> None:
         period: float = 24.0,
         ratio_pairs: Optional[List[List[str]]] = None,
         group_specs: Optional[List[Dict[str, Any]]] = None,
+        max_cardinality: int = 1000,
+        smoothing: float = 10.0,
         output_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate cyclical sin/cos features, safe ratios, and ExploreKit group aggregations."""
@@ -279,10 +281,12 @@ def register_all_tools(mcp: FastMCP) -> None:
             ratio_tf = RatioFeatureTransformer(ratio_pairs=resolved_pairs)
             synthesized_df = ratio_tf.fit_transform(cyclical_df)
 
-            # 3. ExploreKit Group-By Aggregations
+            # 3. ExploreKit Group-By Aggregations with Cardinality Guard (ExploreKit ICDM 2016)
+            skipped_groups: List[Dict[str, Any]] = []
             if group_specs:
-                group_tf = GroupByAggregationTransformer(group_specs=group_specs)
+                group_tf = GroupByAggregationTransformer(group_specs=group_specs, max_cardinality=max_cardinality, smoothing=smoothing)
                 synthesized_df = group_tf.fit_transform(synthesized_df)
+                skipped_groups = getattr(group_tf, "skipped_specs_", [])
 
             new_columns = [c for c in synthesized_df.columns if c not in df.columns]
 
@@ -300,6 +304,7 @@ def register_all_tools(mcp: FastMCP) -> None:
                 "synthesized_columns_count": len(new_columns),
                 "synthesized_columns": new_columns,
                 "total_columns": len(synthesized_df.columns),
+                "skipped_high_cardinality_groups": skipped_groups,
             })
         except Exception as e:
             return format_error_envelope(e, "ml_synthesize_features", ["csv_path", "time_column", "group_specs"])
@@ -312,6 +317,7 @@ def register_all_tools(mcp: FastMCP) -> None:
         top_k: Optional[int] = None,
         importance_threshold: float = 0.005,
         task_type: Literal["auto", "classification", "regression"] = "auto",
+        cv_splits: int = 3,
         output_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Prune noisy and redundant features using gradient-boosted importance (OpenFE architecture)."""
@@ -322,11 +328,7 @@ def register_all_tools(mcp: FastMCP) -> None:
             X = df.drop(columns=[target_column])
             y = df[target_column]
 
-            selector = GradientFeatureSelector(
-                top_k=top_k,
-                importance_threshold=importance_threshold,
-                task_type=task_type,
-            )
+            selector = GradientFeatureSelector(top_k=top_k, importance_threshold=importance_threshold, task_type=task_type, cv=cv_splits)
             selector.fit(X, y)
             X_pruned = selector.transform(X)
             

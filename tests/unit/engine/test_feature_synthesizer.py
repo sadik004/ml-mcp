@@ -95,3 +95,42 @@ def test_groupby_aggregation_transformer_explorekit():
     assert not transformed_test.isna().any().any()
     assert not np.isinf(transformed_test["rent_ratio_to_city_mean"]).any()
 
+def test_groupby_catboost_smoothing_and_cardinality_guard():
+    from ml_mcp.engine.feature_synthesizer import GroupByAggregationTransformer
+
+    # 1. Test Cardinality Guardrail on 100 rows with a singleton column (100 unique values)
+    N = 100
+    df = pd.DataFrame({
+        "uuid_col": [f"id_{i}" for i in range(N)],      # Ratio = 1.0 >= 0.20
+        "cat_col": ["A"] * 90 + ["B"] * 10,           # Valid low cardinality
+        "val": [10.0] * 90 + [100.0] * 10,
+    })
+
+    transformer = GroupByAggregationTransformer(
+        group_specs=[
+            {"cat_col": "uuid_col", "num_col": "val", "aggregations": ["mean"]},
+            {"cat_col": "cat_col", "num_col": "val", "aggregations": ["mean"]},
+        ],
+        max_cardinality=50,
+        max_cardinality_ratio=0.20,
+        smoothing=10.0,
+    )
+
+    transformed = transformer.fit_transform(df)
+
+    # UUID col must be skipped by guardrail!
+    assert "val_mean_by_uuid_col" not in transformed.columns
+    assert len(transformer.skipped_specs_) == 1
+    assert transformer.skipped_specs_[0]["cat_col"] == "uuid_col"
+
+    # cat_col must be present and smoothed
+    assert "val_mean_by_cat_col" in transformed.columns
+    assert "val_diff_from_cat_col_mean" in transformed.columns
+
+    # Cat B has count=10, mean=100.0. Global mean is 19.0.
+    # With smoothing m=10.0: smoothed_mean = (10*100.0 + 10*19.0) / (10 + 10) = 59.5
+    cat_b_row = transformed[transformed["cat_col"] == "B"].iloc[0]
+    expected_smooth_mean = (10 * 100.0 + 10.0 * 19.0) / 20.0  # 59.5
+    diff_val = cat_b_row["val_diff_from_cat_col_mean"]
+    assert abs((cat_b_row["val"] - expected_smooth_mean) - diff_val) < 1e-4
+

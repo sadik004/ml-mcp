@@ -66,3 +66,34 @@ def test_gradient_feature_selector_regression_threshold():
     assert "signal" in selector.selected_features_
     # At least the top feature is always retained
     assert X_pruned.shape[1] >= 1
+
+def test_gradient_feature_selector_oof_cross_validation():
+    from ml_mcp.engine.feature_pruner import GradientFeatureSelector
+
+    np.random.seed(42)
+    N = 120
+    signal = np.linspace(0, 10, N)
+    noise_1 = np.random.normal(0, 1, N)
+    noise_2 = np.random.normal(0, 1, N)
+
+    X = pd.DataFrame({
+        "signal": signal,
+        "noise_1": noise_1,
+        "noise_2": noise_2,
+    })
+    y = (signal > 5.0).astype(int)
+
+    # cv=3 triggers OOF cross-validation
+    selector = GradientFeatureSelector(
+        top_k=1,
+        task_type="classification",
+        cv=3,
+        random_state=42,
+    )
+    X_pruned = selector.fit_transform(X, y)
+
+    assert X_pruned.shape[1] == 1
+    assert "signal" in selector.selected_features_
+    assert "noise_1" in selector.dropped_features_
+    assert "noise_2" in selector.dropped_features_
+
