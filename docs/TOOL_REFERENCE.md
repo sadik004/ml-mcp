@@ -119,23 +119,29 @@ Rebalances imbalanced classification datasets using SMOTE, ADASYN, Random Under 
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_synthesize_features`
-Synthesizes non-linear polynomial combinations, interaction ratios, and log/sqrt transformations.
+Generates cyclical sin/cos features, safe ratios, and ExploreKit group aggregations with empirical Bayes $m$-estimate smoothing and cardinality guardrails.
 - **Parameters:**
-  - `csv_path` (`str`, required): Path to CSV dataset.
-  - `target_column` (`str`, optional): Target column to guard against target leakage.
-  - `max_features` (`int`, default: `20`): Maximum synthetic features to generate.
-  - `output_path` (`str`, optional): Path to save enriched dataset.
-  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+  - `csv_path` (`str`, required): Absolute or relative path to CSV dataset.
+  - `time_column` (`str`, optional): Name of cyclical temporal column (e.g. `"hour"`, `"month"`).
+  - `period` (`float`, default: `24.0`): Periodicity of the cycle (24 for hours, 7 for days, 12 for months).
+  - `ratio_pairs` (`list[list[str]]`, optional): Feature pairs for safe ratio computation (`[["num_col", "den_col"]]`).
+  - `group_specs` (`list[dict]`, optional): ExploreKit group-by aggregation specifications (`cat_col`, `num_col`, `aggregations`, etc.).
+  - `max_cardinality` (`int`, default: `1000`): Maximum unique levels allowed for categorical grouping (with automatic 20% ratio guard when $N \ge 50$) to prevent singleton overfitting.
+  - `smoothing` (`float`, default: `10.0`): CatBoost empirical Bayes $m$-estimate smoothing parameter for shrinking small-sample category means toward the global prior.
+  - `output_path` (`str`, optional): Destination path to save enriched dataset (defaults to `processed/{name}_synthesized.csv`).
+- **Outputs:** Transformed CSV path, generated features list, and transformation metadata.
 
 ### `ml_prune_features`
-Prunes uninformative and noisy features using recursive feature elimination (RFE), Lasso L1, or Permutation Importance.
+Prunes noisy and uninformative features using gradient-boosted out-of-fold (OOF) cross-validated permutation importance (OpenFE architecture, Breiman 2001, Hooker 2019).
 - **Parameters:**
   - `csv_path` (`str`, required): Path to dataset CSV.
-  - `target_column` (`str`, required): Prediction target.
-  - `method` (`"mutual_info" | "l1" | "rf_importance"`, default: `"mutual_info"`)
-  - `top_k` (`int`, optional): Retain top K features.
-  - `output_path` (`str`, optional): Path to save pruned dataset.
-  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+  - `target_column` (`str`, required): Prediction target column name.
+  - `top_k` (`int`, optional): Retain at most top K features by importance rank.
+  - `importance_threshold` (`float`, default: `0.005`): Minimum normalized permutation importance (0.5%) required to retain a feature.
+  - `task_type` (`"auto" | "classification" | "regression"`, default: `"auto"`): Learning task type.
+  - `cv_splits` (`int`, default: `3`): Number of cross-validation folds for out-of-fold permutation importance evaluation (with fallback for small datasets $N < 15$).
+  - `output_path` (`str`, optional): Destination path to save pruned dataset (defaults to `processed/{name}_pruned.csv`).
+- **Outputs:** Pruned CSV path, original feature count, pruned count, retained feature list, and normalized permutation importance scores.
 
 ### `ml_transform_target`
 Applies defensive target transformations (Box-Cox, Yeo-Johnson, Log1p) for skewed regression targets.

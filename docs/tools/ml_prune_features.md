@@ -3,7 +3,7 @@
 > **Tool Name:** `ml_prune_features`  
 > **Module Source:** `src/ml_mcp/engine/feature_pruner.py` / `src/ml_mcp/tools.py`  
 > **Class Implementation:** `GradientFeatureSelector`  
-> **Research Foundation:** *Zhang et al. (ICML 2023) — OpenFE: Automated Feature Generation with Expert-level Performance*  
+> **Research Foundation:** *Zhang et al. (ICML 2023) — OpenFE; Breiman (2001) — Permutation Importance; Hooker et al. (2019) — Out-Of-Fold Validation*  
 > **Layer:** Phase 2: Feature Engineering & Preprocessing
 
 ---
@@ -77,6 +77,7 @@ $$	ext{Retain } f_i \iff ar{I}(f_i) \ge 	au \quad \lor \quad 	ext{Rank}(f_i) \l
 | **`top_k`** | `integer \| null` | `null` | ঐচ্ছিক | সর্বোচ্চ কতটি শীর্ষ ফিচার ধরে রাখতে চান (যেমন: `10`)। |
 | **`importance_threshold`** | `float` | `0.005` | ঐচ্ছিক | ন্যূনতম আপেক্ষিক গুরুত্ব (০.৫%)। এর নিচের ফিচার ড্রপ হবে। |
 | **`task_type`** | `enum` | `"auto"` | ঐচ্ছিক | `"auto"`, `"classification"`, বা `"regression"`। |
+| **`cv_splits`** | `integer` | `3` | ঐচ্ছিক | আউট-অফ-ফোল্ড (OOF) ক্রস-ভ্যালিডেশন ফোল্ড সংখ্যা (ব্রেহিম্যান ২০০১ নীতি অনুযায়ী মডেলের ওভারফিট হওয়া ফিচারের কৃত্রিম গুরুত্ব প্রতিরোধে আনসিন ভ্যালিডেশন সেটে টেস্ট করা হয়)। |
 | **`output_path`** | `string | null` | `null` | ঐচ্ছিক | ছাঁটাইকৃত ডেটাসেটটি যে ফাইলে সেভ হবে (না দিলে স্বয়ংক্রিয়ভাবে `processed/{name}_pruned.csv` পাথে সেভ হয়)। |
 | **`view`** | `enum` | `"compact"` | ঐচ্ছিক | `"compact"` বা `"detailed"` রেসপন্স মোড। |
 
@@ -98,8 +99,8 @@ $$	ext{Retain } f_i \iff ar{I}(f_i) \ge 	au \quad \lor \quad 	ext{Rank}(f_i) \l
 ### মেগা-ফিচার ৪: আল্ট্রা-ফাস্ট লাইটওয়েট বুস্টার কনস্ট্রাকশন (`HistGradientBoosting`)
 পূর্ণাঙ্গ হেভি বুস্টার ট্রেইন না করে এটি `HistGradientBoosting(max_iter=30, max_depth=5)` দিয়ে একটি বাজপাখির মতো দ্রুত বেসলাইন ট্রি তৈরি করে। এটি ডেটা সাইজ বড় হলেও চোখের পলকে ফিট হয়ে যায়।
 
-### মেগা-ফিচার ৫: মাল্টি-পাস পারমিউটেশন ইমপর্ট্যান্স ইঞ্জিন (`n_repeats=3`)
-ট্রি স্প্লিট কাউন্টের চেয়ে **Permutation Importance** অনেক বেশি শক্তিশালী ও পক্ষপাতমুক্ত। এটি প্রতিটি ফিচারের মান এলোমেলোভাবে ৩ বার শাফেল করে দেখে যে মডেলের পারফর্মেন্স কতটা ধসে পড়ছে।
+### মেগা-ফিচার ৫: আউট-অফ-ফোল্ড (OOF) ক্রস-ভ্যালিডেটেড পারমিউটেশন ইঞ্জিন (`cv=3`, `n_repeats=3`)
+ট্রি স্প্লিট কাউন্টের চেয়ে **Out-Of-Fold Permutation Importance** বহুগুণ উন্নত ও আনবায়াসড (Breiman 2001, Hooker 2019)। ট্রেইনিং সেটের ওপর পারমিউটেশন চালালে নয়েজি ও মেমোরাইজড ফিচারের কৃত্রিম উচ্চ গুরুত্ব তৈরি হয়। আমাদের ইঞ্জিন $K$-Fold / StratifiedKFold স্প্লিট তৈরি করে প্রতিটি ফোল্ডে বুস্টার ট্রেইন করে এবং পারমিউটেশন ইমপর্ট্যান্স কেবল **আনসিন ভ্যালিডেশন স্লাইসের ($X_{\text{val}}$)** ওপর পরিমাপ করে। এরপর সকল ফোল্ডের গড় ড্রপ হিসাব করে ১০০% অবজেক্টিভ স্কোর বের করা হয় (ছোট ডেটাসেটের ক্ষেত্রে স্বয়ংক্রিয় ফলব্যাক সক্রিয় থাকে)।
 
 ### মেগা-ফিচার ৬: ঋণাত্মক গুরুত্ব রোধ ও ১০০% ইউনিট নরমালাইজেশন ($\sum I = 1.0$)
 পারমিউটেশনে অনেক সময় নয়েজি ফিচারের গুরুত্ব মাইনাস (Negative) আসতে পারে। ইঞ্জিনটি `np.maximum(0.0, raw)` দিয়ে ঋণাত্মক মানগুলোকে ০ করে দেয় এবং সবশেষে সব ফিচারের গুরুত্ব যোগ করে ১.০ (১০০%) এর সাপেক্ষে স্কেল করে।

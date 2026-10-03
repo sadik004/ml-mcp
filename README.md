@@ -149,8 +149,8 @@ All tools are decorated with @mcp.tool(), protected by the Token Shield, and ret
 | **8** | ml_handle_text_features | **Phase 2: Features** | Detects free-form natural language text features while filtering UUIDs and random hashes. |
 | **9** | ml_auto_clean_and_pipe | **Phase 2: Features** | Zero-leakage Scikit-Learn ColumnTransformer preprocessing pipeline with median/mode imputers and scalers. |
 | **10** | ml_balance_classes | **Phase 2: Features** | Synthetic class imbalance resampling (SMOTE, ADASYN, Random Under Sampler, Balanced Class Weights). |
-| **11** | ml_synthesize_features | **Phase 2: Features** | Generates polynomial features, mathematical ratios, and interaction terms. |
-| **12** | ml_prune_features | **Phase 2: Features** | Prunes uninformative and noisy features using Mutual Information, Lasso L1, or Permutation Importance. |
+| **11** | ml_synthesize_features | **Phase 2: Features** | Generates cyclical sin/cos features, safe ratios, and ExploreKit group aggregations with empirical Bayes smoothing. |
+| **12** | ml_prune_features | **Phase 2: Features** | Prunes noisy features using gradient-boosted out-of-fold (OOF) cross-validated permutation importance. |
 | **13** | ml_transform_target | **Phase 2: Features** | Linearizes highly skewed continuous targets (Log1p, Box-Cox, and Yeo-Johnson transformations). |
 | **14** | ml_benchmark_models | **Phase 3: Arena** | Competitive tournament across LightGBM, XGBoost, CatBoost, Random Forest, Extra Trees, and Ridge/Logistic. |
 | **15** | ml_create_ensemble | **Phase 3: Arena** | Multi-model Stacking and Voting ensembles with out-of-fold (OOF) meta-learners. |
