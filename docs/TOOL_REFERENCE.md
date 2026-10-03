@@ -157,13 +157,15 @@ Applies defensive target transformations (Box-Cox, Yeo-Johnson, Log1p) for skewe
 ## 4. Phase 3: Tournament, Tuning & Stacking
 
 ### `ml_benchmark_models`
-Runs an automated tournament across LightGBM, XGBoost, CatBoost, Random Forest, and Ridge/LogisticRegression.
+Runs an automated tournament across LightGBM, XGBoost, CatBoost, Random Forest, and Ridge/LogisticRegression with metric alignment, state isolation, and diversity-guarded stacking.
 - **Parameters:**
   - `csv_path` (`str`, required): Path to preprocessed CSV.
-  - `target_column` (`str`, required): Prediction target.
-  - `task_type` (`"auto" | "classification" | "regression"`, default: `"auto"`)
-  - `metric` (`str`, optional): Target metric (e.g. "roc_auc", "f1", "neg_root_mean_squared_error").
-  - `cv_splits` (`int`, default: `5`): Stratified/K-Fold splits.
+  - `target_column` (`str`, required): Prediction target column name.
+  - `task_type` (`"classification" | "regression"`, default: `"classification"`)
+  - `cv_splits` (`int`, default: `5`): Cross-validation fold count.
+  - `scoring` (`str`, optional): Target evaluation metric (e.g. "roc_auc", "f1", "f1_macro", "accuracy", "r2", "neg_root_mean_squared_error").
+  - `group_column` (`str`, optional): Column name for group-aware StratifiedGroupKFold / GroupKFold cross-validation.
+  - `fast_mode` (`bool`, default: `False`): Truncates tree counts (30 trees) for low-latency testing.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_create_ensemble`
@@ -177,13 +179,15 @@ Constructs multi-model Stacking and Voting ensembles with out-of-fold meta-learn
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_tune_hyperparameters`
-Conducts Bayesian optimization with Optuna to search parameter spaces.
+Conducts Bayesian optimization with Optuna TPE and active in-loop MedianPruner.
 - **Parameters:**
-  - `csv_path` (`str`, required): Path to dataset.
+  - `csv_path` (`str`, required): Path to dataset CSV.
   - `target_column` (`str`, required): Prediction target.
-  - `model_name` (`str`, default: `"lightgbm"`): Model architecture to tune.
-  - `n_trials` (`int`, default: `30`): Number of Bayesian optimization trials.
-  - `timeout_seconds` (`int`, default: `300`): Maximum budget time.
+  - `model_name` (`str`, default: `"lightgbm"`): Model architecture to tune ("lightgbm", "xgboost", "catboost", "random_forest", "extra_trees").
+  - `n_trials` (`int`, default: `10`): Number of Bayesian optimization trials.
+  - `task_type` (`str`, default: `"classification"`): "classification" or "regression".
+  - `metric` (`str`, optional): Target metric (defaults to "roc_auc" for classification, "r2" for regression).
+  - `group_column` (`str`, optional): Column name for group-aware cross-validation.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_pseudo_label_loop`

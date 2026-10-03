@@ -391,14 +391,22 @@ def register_all_tools(mcp: FastMCP) -> None:
         target_column: str,
         task_type: Literal["classification", "regression"] = "classification",
         cv_splits: int = 5,
+        scoring: Optional[str] = None,
+        group_column: Optional[str] = None,
         fast_mode: bool = False,
         view: Literal["compact", "detailed"] = "compact",
     ) -> Dict[str, Any]:
-        """Execute 8-model competitive arena with GPU acceleration and overfitting guards."""
+        """Execute 8-model competitive arena with metric alignment, diversity-guarded stacking, and GPU acceleration."""
         try:
             df = pd.read_csv(csv_path)
             arena = TournamentArena(cv_splits=cv_splits, fast_mode=fast_mode)
-            leaderboard = arena.run_tournament(df, target_column=target_column, task_type=task_type)
+            leaderboard = arena.run_tournament(
+                df,
+                target_column=target_column,
+                task_type=task_type,
+                group_column=group_column,
+                scoring=scoring,
+            )
             res = leaderboard.to_compact() if view == "compact" else leaderboard.model_dump()
             return sanitize_for_json(res)
         except Exception as e:
@@ -447,14 +455,25 @@ def register_all_tools(mcp: FastMCP) -> None:
         model_name: str = "lightgbm",
         n_trials: int = 10,
         task_type: str = "classification",
+        metric: Optional[str] = None,
+        group_column: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Bayesian hyperparameter optimization via Optuna TPE and MedianPruner."""
+        """Bayesian hyperparameter optimization via Optuna TPE and active MedianPruner."""
         try:
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
+            default_metric = "roc_auc" if task_type == "classification" else "r2"
+            eval_metric = metric or default_metric
             tuner = BayesianTuner(n_trials=n_trials)
-            study_dto, _ = tuner.tune(model_name=model_name, X=X, y=y, task_type=task_type)
+            study_dto, _ = tuner.tune(
+                model_name=model_name,
+                X=X,
+                y=y,
+                task_type=task_type,
+                metric=eval_metric,
+                group_column=group_column,
+            )
             return sanitize_for_json(study_dto.to_compact())
         except Exception as e:
             return format_error_envelope(e, "ml_tune_hyperparameters", ["csv_path", "target_column", "model_name"])

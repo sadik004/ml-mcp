@@ -1,57 +1,75 @@
-"""Optuna Bayesian Hyperparameter Optimization Engine."""
+"""Bayesian Hyperparameter Optimization using Optuna TPE and Active MedianPruner."""
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Tuple
-
+from typing import Any, Dict, List, Literal, Optional, Tuple
 import numpy as np
+import pandas as pd
 import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.base import BaseEstimator, clone
-from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor, RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import (
+    ExtraTreesClassifier,
+    ExtraTreesRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
 from sklearn.metrics import get_scorer
-from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
+from sklearn.model_selection import GroupKFold, KFold, StratifiedGroupKFold, StratifiedKFold
 
 from ml_mcp.schemas.tuning import OptunaStudyDTO
 
-logger = logging.getLogger(__name__)
-
-# Enforce logging verbosity guard to protect console tokens
+# Silence Optuna info logs to protect console tokens
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
 def _get_metric_direction(metric: str) -> str:
-    """Determine optimization direction from metric name."""
-    minimize_metrics = {"log_loss", "neg_log_loss", "rmse", "neg_root_mean_squared_error", "mae", "neg_mean_absolute_error", "mse"}
-    if metric.lower() in minimize_metrics:
-        return "minimize"
-    return "maximize"
+    """Infer optimization direction for a given metric."""
+    minimize_metrics = {
+        "log_loss",
+        "neg_log_loss",
+        "mse",
+        "mean_squared_error",
+        "neg_mean_squared_error",
+        "rmse",
+        "root_mean_squared_error",
+        "neg_root_mean_squared_error",
+        "mae",
+        "mean_absolute_error",
+        "neg_mean_absolute_error",
+    }
+    return "minimize" if metric.lower() in minimize_metrics else "maximize"
 
 
 def _get_sklearn_scoring(metric: str, task_type: str) -> str:
-    """Map user metric to standard scikit-learn scoring string."""
-    metric_lower = metric.lower()
-    if task_type == "classification":
-        if "auc" in metric_lower or "roc" in metric_lower:
-            return "roc_auc"
-        if "pr" in metric_lower:
-            return "average_precision"
-        if "f1" in metric_lower:
-            return "f1_macro"
-        if "log_loss" in metric_lower:
-            return "neg_log_loss"
-        return "accuracy"
-    else:
-        if "rmse" in metric_lower:
-            return "neg_root_mean_squared_error"
-        if "mae" in metric_lower:
-            return "neg_mean_absolute_error"
-        return "r2"
+    """Map friendly metric name to scikit-learn scoring string."""
+    metric_map = {
+        "roc_auc": "roc_auc",
+        "auc": "roc_auc",
+        "accuracy": "accuracy",
+        "f1": "f1_weighted" if task_type == "classification" else "r2",
+        "f1_macro": "f1_macro",
+        "f1_weighted": "f1_weighted",
+        "precision": "precision_weighted",
+        "recall": "recall_weighted",
+        "log_loss": "neg_log_loss",
+        "r2": "r2",
+        "mse": "neg_mean_squared_error",
+        "rmse": "neg_root_mean_squared_error",
+        "mae": "neg_mean_absolute_error",
+    }
+    return metric_map.get(metric.lower(), metric)
 
 
 class BayesianTuner:
-    """Bayesian Hyperparameter Tuner powered by Optuna TPE & MedianPruner."""
+    """Bayesian Hyperparameter Tuner powered by Optuna TPE & Active In-Loop MedianPruner.
+    
+    Theoretical Basis:
+        - Akiba, T., Sano, S., Yanase, T., Ohta, T., & Koyama, M. (KDD 2019).
+          Optuna: A Next-generation Hyperparameter Optimization Framework.
+    """
 
     def __init__(
         self,
@@ -162,10 +180,23 @@ class BayesianTuner:
         task_type: str = "classification",
         metric: str = "roc_auc",
         direction: Optional[str] = None,
+        group_column: Optional[str] = None,
+        groups: Optional[Any] = None,
         study_name: Optional[str] = None,
     ) -> Tuple[OptunaStudyDTO, BaseEstimator]:
-        """Execute Bayesian Optimization with Cross-Validation and Early Pruning."""
-        X_arr = np.asarray(X)
+        """Execute Bayesian Optimization with In-Loop Median Pruning and Group Splitting."""
+        if isinstance(X, pd.DataFrame):
+            if group_column and group_column in X.columns:
+                groups_arr = np.asarray(X[group_column])
+                X_clean = X.drop(columns=[group_column])
+            else:
+                groups_arr = np.asarray(groups) if groups is not None else None
+                X_clean = X
+            X_arr = np.asarray(X_clean)
+        else:
+            groups_arr = np.asarray(groups) if groups is not None else None
+            X_arr = np.asarray(X)
+
         y_arr = np.asarray(y)
 
         if direction is None:
@@ -173,12 +204,19 @@ class BayesianTuner:
 
         optuna_direction = direction
         scoring_metric = _get_sklearn_scoring(metric, task_type)
+        scorer = get_scorer(scoring_metric)
 
-        # Build CV splitter
-        if task_type == "classification":
-            cv = StratifiedKFold(n_splits=self.cv_splits, shuffle=True, random_state=self.random_state)
+        # Build CV splitter with Group Support
+        if groups_arr is not None:
+            if task_type == "classification":
+                cv = StratifiedGroupKFold(n_splits=self.cv_splits)
+            else:
+                cv = GroupKFold(n_splits=self.cv_splits)
         else:
-            cv = KFold(n_splits=self.cv_splits, shuffle=True, random_state=self.random_state)
+            if task_type == "classification":
+                cv = StratifiedKFold(n_splits=self.cv_splits, shuffle=True, random_state=self.random_state)
+            else:
+                cv = KFold(n_splits=self.cv_splits, shuffle=True, random_state=self.random_state)
 
         pruner = MedianPruner(n_startup_trials=2, n_warmup_steps=1)
         sampler = TPESampler(seed=self.random_state)
@@ -195,17 +233,35 @@ class BayesianTuner:
             params = self._sample_params(trial, model_name)
             estimator = self._instantiate_model(model_name, task_type, params)
 
-            # Evaluate with Cross-Validation
-            scores = cross_val_score(estimator, X_arr, y_arr, cv=cv, scoring=scoring_metric, n_jobs=1)
-            mean_score = float(np.mean(scores))
+            fold_scores: List[float] = []
+            split_gen = cv.split(X_arr, y_arr, groups=groups_arr) if groups_arr is not None else cv.split(X_arr, y_arr)
 
-            # Scikit-learn negates loss metrics (e.g. neg_log_loss, neg_root_mean_squared_error)
-            if scoring_metric.startswith("neg_"):
-                # If optimizing minimize direction, invert to positive for readability
-                if optuna_direction == "minimize":
-                    return -mean_score
-                return mean_score
+            for step, (train_idx, val_idx) in enumerate(split_gen):
+                X_tr, X_va = X_arr[train_idx], X_arr[val_idx]
+                y_tr, y_va = y_arr[train_idx], y_arr[val_idx]
 
+                fold_est = clone(estimator)
+                fold_est.fit(X_tr, y_tr)
+
+                score = float(scorer(fold_est, X_va, y_va))
+                fold_scores.append(score)
+
+                # Report running intermediate score to Optuna MedianPruner
+                intermediate_score = float(np.mean(fold_scores))
+                if scoring_metric.startswith("neg_") and optuna_direction == "minimize":
+                    report_score = -intermediate_score
+                else:
+                    report_score = intermediate_score
+
+                trial.report(report_score, step=step)
+
+                # Active In-Loop Early Stopping (Akiba et al. KDD 2019)
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
+
+            mean_score = float(np.mean(fold_scores))
+            if scoring_metric.startswith("neg_") and optuna_direction == "minimize":
+                return -mean_score
             return mean_score
 
         study.optimize(
@@ -235,7 +291,6 @@ class BayesianTuner:
 
         # Refit best estimator on full training set
         all_best_params = self._sample_params(study.best_trial, model_name)
-        # Update with chosen trial params
         all_best_params.update(best_params)
         best_estimator = self._instantiate_model(model_name, task_type, all_best_params)
         best_estimator.fit(X_arr, y_arr)
