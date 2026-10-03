@@ -205,31 +205,39 @@ Executes confidence-gated semi-supervised pseudo-labeling for unlabeled datasets
 ## 5. Phase 4: Calibration, Safety & Explainability
 
 ### `ml_calibrate_probabilities`
-Calibrates model output probabilities using Isotonic Regression or Platt Scaling (Sigmoid).
+Calibrates model output probabilities via Platt Scaling, Isotonic Regression, or Temperature Scaling with simplex normalization and adaptive ECE.
 - **Parameters:**
   - `csv_path` (`str`, required): Evaluation dataset CSV.
-  - `target_column` (`str`, required): Binary classification ground truth.
-  - `model_path` (`str`, required): Persisted model checkpoint.
-  - `method` (`"isotonic" | "sigmoid"`, default: `"isotonic"`)
+  - `target_column` (`str`, required): Classification ground truth column.
+  - `model_path` (`str`, optional): Path to persisted model checkpoint (.joblib).
+  - `model_name` (`str`, default: `"lightgbm"`): Fallback model architecture if model_path not supplied.
+  - `method` (`"isotonic" | "sigmoid" | "temperature"`, optional): Calibration technique.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_tune_threshold_and_errors`
-Finds the optimal decision threshold minimizing financial asymmetric loss and cost matrix.
+Optimizes classification decision thresholds using PR-curve exact cutoffs and Sheng & Ling (2014) cost-sensitive loss matrix.
 - **Parameters:**
   - `csv_path` (`str`, required): Validation dataset CSV.
   - `target_column` (`str`, required): Ground truth binary label.
-  - `model_path` (`str`, required): Model checkpoint.
-  - `fp_cost` (`float`, default: `1.0`): Financial penalty for False Positives.
-  - `fn_cost` (`float`, default: `5.0`): Financial penalty for False Negatives.
+  - `beta` (`float`, default: `1.0`): F-beta metric weight favoring recall.
+  - `criterion` (`"f_beta" | "cost_loss"`, default: `"f_beta"`): Optimization goal.
+  - `cost_fp` (`float`, default: `1.0`): Economic cost per False Positive.
+  - `cost_fn` (`float`, default: `5.0`): Economic cost per False Negative.
+  - `benefit_tp` (`float`, default: `0.0`): Economic benefit per True Positive.
+  - `benefit_tn` (`float`, default: `0.0`): Economic benefit per True Negative.
+  - `model_path` (`str`, optional): Path to persisted model checkpoint (.joblib).
+  - `model_name` (`str`, default: `"lightgbm"`): Model architecture if model_path not supplied.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_explain_predictions`
-Computes exact TreeSHAP values, global feature importances, and local sample explanations.
+Computes sub-10s TreeSHAP global feature attributions or Lundberg et al. (Nature MI 2020) local sample waterfall breakdowns.
 - **Parameters:**
   - `csv_path` (`str`, required): Dataset CSV.
   - `target_column` (`str`, required): Target label.
-  - `model_path` (`str`, required): Model checkpoint.
-  - `sample_index` (`int`, optional): Local explanation sample row index.
+  - `top_k` (`int`, default: `10`): Max features in attribution report.
+  - `instance_index` (`int`, optional): Row index for single-sample local waterfall breakdown.
+  - `model_path` (`str`, optional): Path to persisted model checkpoint (.joblib).
+  - `model_name` (`str`, default: `"lightgbm"`): Model architecture if model_path not supplied.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_detect_ood`

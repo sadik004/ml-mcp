@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 from sklearn.datasets import make_classification, make_regression
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.linear_model import LogisticRegression
 
 from ml_mcp.engine.calibrator import ProbabilityCalibrator
 from ml_mcp.schemas.tuning import CalibrationReportDTO
@@ -28,15 +27,14 @@ def test_calibrator_regression_task_skipped():
     assert calibrated_model is model
 
 
-def test_calibrator_binary_classification_platt_and_ece():
-    """Verify Platt scaling (sigmoid) on binary classification and ECE calculation."""
+def test_calibrator_temperature_scaling_and_adaptive_ece():
+    """Verify temperature scaling and debiased adaptive ECE calculation."""
     X, y = make_classification(
         n_samples=300,
         n_features=10,
         n_informative=5,
         random_state=42,
     )
-    # Uncalibrated baseline
     base_model = RandomForestClassifier(n_estimators=15, random_state=42)
 
     calibrator = ProbabilityCalibrator()
@@ -45,23 +43,23 @@ def test_calibrator_binary_classification_platt_and_ece():
         X=X,
         y=y,
         task_type="classification",
-        method="sigmoid",
+        method="temperature",
         cv=3,
     )
 
     assert isinstance(report, CalibrationReportDTO)
-    assert report.method == "sigmoid"
-    assert report.pre_brier_score >= 0.0
-    assert report.post_brier_score >= 0.0
-    assert report.pre_ece is not None
-    assert report.post_ece is not None
+    assert report.method == "temperature"
+    assert report.temperature is not None
+    assert report.adaptive_ece is not None
+    assert report.conformal_coverage is not None
+    assert 0.80 <= report.conformal_coverage <= 1.0
     assert hasattr(calibrated_model, "predict_proba")
 
 
-def test_calibrator_multiclass_isotonic():
-    """Verify Isotonic calibration on multi-class and macro ECE calculation."""
+def test_calibrator_multiclass_isotonic_and_simplex_normalization():
+    """Verify Isotonic calibration strictly satisfies sum-to-one simplex probability."""
     X, y = make_classification(
-        n_samples=500,
+        n_samples=400,
         n_features=10,
         n_classes=3,
         n_informative=6,
@@ -81,6 +79,9 @@ def test_calibrator_multiclass_isotonic():
 
     assert isinstance(report, CalibrationReportDTO)
     assert report.method == "isotonic"
-    assert report.pre_ece is not None
-    assert report.post_ece is not None
-    assert hasattr(calibrated_model, "predict_proba")
+    assert report.adaptive_ece is not None
+
+    # Verify probability simplex constraint
+    probs = calibrated_model.predict_proba(X[:20])
+    sums = np.sum(probs, axis=1)
+    assert np.allclose(sums, 1.0, atol=1e-5)

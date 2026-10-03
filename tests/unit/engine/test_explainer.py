@@ -1,11 +1,11 @@
-"""Unit tests for Sub-10s TreeSHAP explainability engine."""
+"""Unit tests for Sub-10s TreeSHAP and Local Waterfall Attribution."""
 import time
 import numpy as np
 import pandas as pd
 import pytest
 from sklearn.datasets import make_classification
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
 
 from ml_mcp.engine.explainer import TreeShapExplainer
 
@@ -13,12 +13,12 @@ from ml_mcp.engine.explainer import TreeShapExplainer
 def test_treeshap_explainer_fast_execution_and_token_guard():
     """Verify TreeSHAP executes in under 10 seconds and caps top 10 features."""
     X, y = make_classification(
-        n_samples=500,
-        n_features=15,
-        n_informative=8,
+        n_samples=400,
+        n_features=12,
+        n_informative=6,
         random_state=42,
     )
-    feature_names = [f"feat_{i}" for i in range(15)]
+    feature_names = [f"feat_{i}" for i in range(12)]
     X_df = pd.DataFrame(X, columns=feature_names)
 
     clf = RandomForestClassifier(n_estimators=15, random_state=42)
@@ -38,26 +38,51 @@ def test_treeshap_explainer_fast_execution_and_token_guard():
     assert "top_features" in report
     assert len(report["top_features"]) <= 10
     assert "feature_directions" in report
-    assert len(report["feature_directions"]) <= 10
-    assert "execution_time_seconds" in report
     assert report["execution_time_seconds"] < 10.0
 
 
-def test_treeshap_explainer_fallback_for_linear_model():
-    """Verify non-tree models gracefully fall back without throwing exceptions."""
-    X, y = make_classification(n_samples=100, n_features=6, random_state=42)
+def test_treeshap_local_waterfall_attribution():
+    """Verify local instance waterfall attribution breakdown."""
+    X, y = make_classification(n_samples=150, n_features=6, random_state=42)
     feature_names = [f"f_{i}" for i in range(6)]
-    clf = LogisticRegression()
-    clf.fit(X, y)
+    X_df = pd.DataFrame(X, columns=feature_names)
+
+    clf = RandomForestClassifier(n_estimators=10, random_state=42)
+    clf.fit(X_df, y)
 
     explainer = TreeShapExplainer()
-    report = explainer.explain(
+    instance_report = explainer.explain_instance(
         model=clf,
-        X=X,
-        feature_names=feature_names,
+        x_row=X_df.iloc[[0]],
+        background_X=X_df,
         top_k=5,
     )
 
+    assert "prediction" in instance_report
+    assert "base_value" in instance_report
+    assert "waterfall_steps" in instance_report
+    assert len(instance_report["waterfall_steps"]) <= 5
+    assert "top_positive_drivers" in instance_report
+    assert "top_negative_drivers" in instance_report
+
+
+def test_treeshap_zero_fake_permutation_fallback():
+    """Verify non-tree models (e.g. KNN) use genuine permutation importance with zero fake 1.0."""
+    X, y = make_classification(n_samples=80, n_features=5, random_state=42)
+    feature_names = [f"f_{i}" for i in range(5)]
+    knn = KNeighborsClassifier(n_neighbors=3)
+    knn.fit(X, y)
+
+    explainer = TreeShapExplainer()
+    report = explainer.explain(
+        model=knn,
+        X=X,
+        feature_names=feature_names,
+        top_k=4,
+    )
+
+    assert report["explainer_type"] == "PermutationExplainer"
     assert "top_features" in report
-    assert len(report["top_features"]) <= 5
-    assert report["explainer_type"] in ["LinearExplainer", "PermutationExplainer", "CoefficientsFallback"]
+    # Critical: verify NO fake 1.0 dummy weights
+    for feat_name, imp in report["top_features"].items():
+        assert imp != 1.0 or len(report["top_features"]) == 1

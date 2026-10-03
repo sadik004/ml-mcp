@@ -483,15 +483,46 @@ def register_all_tools(mcp: FastMCP) -> None:
     async def ml_calibrate_probabilities(
         csv_path: str,
         target_column: str,
-        method: Optional[str] = None,
+        model_path: Optional[str] = None,
+        model_name: str = "lightgbm",
+        method: Optional[Literal["isotonic", "sigmoid", "temperature"]] = None,
     ) -> Dict[str, Any]:
-        """Calibrate classifier probabilities via Platt Scaling or Isotonic Regression."""
+        """Calibrate classifier probabilities via Platt Scaling, Isotonic Regression, or Temperature Scaling."""
         try:
-            from sklearn.ensemble import RandomForestClassifier
+            import os
+            import joblib
+            from sklearn.ensemble import HistGradientBoostingClassifier
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
-            clf = RandomForestClassifier(n_estimators=15, random_state=42)
+
+            has_non_numeric = any(X[col].dtype == "object" or isinstance(X[col].dtype, pd.StringDtype) or X[col].isnull().any() for col in X.columns)
+            if has_non_numeric:
+                builder = DefensivePipelineBuilder()
+                pipe = builder.build_pipeline(df, target_column=target_column)
+                X = pipe.fit_transform(X, y)
+
+            clf = None
+            if model_path and os.path.exists(model_path):
+                clf = joblib.load(model_path)
+            else:
+                name = model_name.lower()
+                if "lightgbm" in name or "lgbm" in name:
+                    try:
+                        from lightgbm import LGBMClassifier
+                        clf = LGBMClassifier(n_estimators=50, random_state=42, verbose=-1)
+                    except Exception:
+                        pass
+                elif "xgboost" in name or "xgb" in name:
+                    try:
+                        from xgboost import XGBClassifier
+                        clf = XGBClassifier(n_estimators=50, random_state=42, eval_metric="logloss")
+                    except Exception:
+                        pass
+                if clf is None:
+                    clf = HistGradientBoostingClassifier(random_state=42)
+                clf.fit(X, y)
+
             calibrator = ProbabilityCalibrator()
             report, _ = calibrator.calibrate(model=clf, X=X, y=y, method=method)
             return sanitize_for_json(report.to_compact())
@@ -504,10 +535,19 @@ def register_all_tools(mcp: FastMCP) -> None:
         csv_path: str,
         target_column: str,
         beta: float = 1.0,
+        criterion: Literal["f_beta", "cost_loss"] = "f_beta",
+        cost_fp: float = 1.0,
+        cost_fn: float = 5.0,
+        benefit_tp: float = 0.0,
+        benefit_tn: float = 0.0,
+        model_path: Optional[str] = None,
+        model_name: str = "lightgbm",
     ) -> Dict[str, Any]:
-        """Optimize classification decision threshold using F-beta and perform error forensics."""
+        """Optimize classification decision threshold using cost-sensitive loss matrix and PR-curve cutoffs."""
         try:
-            from sklearn.ensemble import RandomForestClassifier
+            import os
+            import joblib
+            from sklearn.ensemble import HistGradientBoostingClassifier
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
@@ -516,11 +556,40 @@ def register_all_tools(mcp: FastMCP) -> None:
                 builder = DefensivePipelineBuilder()
                 pipe = builder.build_pipeline(df, target_column=target_column)
                 X = pipe.fit_transform(X, y)
-            clf = RandomForestClassifier(n_estimators=15, random_state=42)
-            clf.fit(X, y)
+
+            clf = None
+            if model_path and os.path.exists(model_path):
+                clf = joblib.load(model_path)
+            else:
+                name = model_name.lower()
+                if "lightgbm" in name or "lgbm" in name:
+                    try:
+                        from lightgbm import LGBMClassifier
+                        clf = LGBMClassifier(n_estimators=50, random_state=42, verbose=-1)
+                    except Exception:
+                        pass
+                elif "xgboost" in name or "xgb" in name:
+                    try:
+                        from xgboost import XGBClassifier
+                        clf = XGBClassifier(n_estimators=50, random_state=42, eval_metric="logloss")
+                    except Exception:
+                        pass
+                if clf is None:
+                    clf = HistGradientBoostingClassifier(random_state=42)
+                clf.fit(X, y)
+
             probas = clf.predict_proba(X)[:, 1] if hasattr(clf, "predict_proba") else clf.predict(X)
             optimizer = DecisionThresholdOptimizer()
-            report = optimizer.optimize(y_true=y, y_probas=probas, beta=beta)
+            report = optimizer.optimize(
+                y_true=y,
+                y_probas=probas,
+                beta=beta,
+                criterion=criterion,
+                cost_fp=cost_fp,
+                cost_fn=cost_fn,
+                benefit_tp=benefit_tp,
+                benefit_tn=benefit_tn,
+            )
             return sanitize_for_json(report.to_compact())
         except Exception as e:
             return format_error_envelope(e, "ml_tune_threshold_and_errors", ["csv_path", "target_column"])
@@ -531,10 +600,15 @@ def register_all_tools(mcp: FastMCP) -> None:
         csv_path: str,
         target_column: str,
         top_k: int = 10,
+        instance_index: Optional[int] = None,
+        model_path: Optional[str] = None,
+        model_name: str = "lightgbm",
     ) -> Dict[str, Any]:
-        """Compute sub-10s TreeSHAP feature attributions with token-shielded top-10 impact."""
+        """Compute sub-10s TreeSHAP feature attributions or local sample waterfall breakdown."""
         try:
-            from sklearn.ensemble import RandomForestClassifier
+            import os
+            import joblib
+            from sklearn.ensemble import HistGradientBoostingClassifier
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
@@ -543,11 +617,36 @@ def register_all_tools(mcp: FastMCP) -> None:
                 builder = DefensivePipelineBuilder()
                 pipe = builder.build_pipeline(df, target_column=target_column)
                 X = pipe.fit_transform(X, y)
-            clf = RandomForestClassifier(n_estimators=15, random_state=42)
-            clf.fit(X, y)
+
+            clf = None
+            if model_path and os.path.exists(model_path):
+                clf = joblib.load(model_path)
+            else:
+                name = model_name.lower()
+                if "lightgbm" in name or "lgbm" in name:
+                    try:
+                        from lightgbm import LGBMClassifier
+                        clf = LGBMClassifier(n_estimators=50, random_state=42, verbose=-1)
+                    except Exception:
+                        pass
+                elif "xgboost" in name or "xgb" in name:
+                    try:
+                        from xgboost import XGBClassifier
+                        clf = XGBClassifier(n_estimators=50, random_state=42, eval_metric="logloss")
+                    except Exception:
+                        pass
+                if clf is None:
+                    clf = HistGradientBoostingClassifier(random_state=42)
+                clf.fit(X, y)
+
             explainer = TreeShapExplainer()
-            feature_names = [f"f_{i}" for i in range(X.shape[1])] if hasattr(X, "shape") else list(df.drop(columns=[target_column]).columns)
-            report = explainer.explain(clf, X, feature_names=feature_names, top_k=top_k)
+            feature_names = [f"f_{i}" for i in range(X.shape[1])] if hasattr(X, "shape") and not hasattr(X, "columns") else list(df.drop(columns=[target_column]).columns)
+
+            if instance_index is not None:
+                row_slice = X.iloc[[instance_index]] if hasattr(X, "iloc") else X[[instance_index]]
+                report = explainer.explain_instance(clf, row_slice, background_X=X, feature_names=feature_names, top_k=top_k)
+            else:
+                report = explainer.explain(clf, X, feature_names=feature_names, top_k=top_k)
             return sanitize_for_json(report)
         except Exception as e:
             return format_error_envelope(e, "ml_explain_predictions", ["csv_path", "target_column"])

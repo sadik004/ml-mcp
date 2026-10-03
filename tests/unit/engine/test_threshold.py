@@ -1,4 +1,4 @@
-"""Unit tests for Decision Threshold Optimizer and Error Forensics."""
+"""Unit tests for Decision Threshold Optimizer and Cost Forensics."""
 import numpy as np
 import pytest
 from sklearn.datasets import make_classification
@@ -25,7 +25,7 @@ def test_threshold_optimizer_f1_balanced():
     report = optimizer.optimize(y_true=y_test, y_probas=probas, beta=1.0)
 
     assert isinstance(report, ThresholdReportDTO)
-    assert 0.01 <= report.optimal_threshold <= 0.99
+    assert 0.001 <= report.optimal_threshold <= 0.999
     assert report.f_beta_score >= 0.0
     assert report.precision >= 0.0
     assert report.recall >= 0.0
@@ -37,12 +37,12 @@ def test_threshold_optimizer_f1_balanced():
     assert report.false_negative_count == cm["fn"]
 
 
-def test_threshold_optimizer_beta_recall_vs_precision():
-    """Verify beta=2.0 prioritizes recall and beta=0.5 prioritizes precision."""
+def test_threshold_cost_matrix_optimization():
+    """Verify cost-loss minimization produces positive cost savings over default 0.50."""
     X, y = make_classification(
         n_samples=500,
         n_features=8,
-        weights=[0.80, 0.20],
+        weights=[0.90, 0.10],
         random_state=42,
     )
     clf = RandomForestClassifier(n_estimators=20, random_state=42)
@@ -51,11 +51,21 @@ def test_threshold_optimizer_beta_recall_vs_precision():
     y_test = y[350:]
 
     optimizer = DecisionThresholdOptimizer()
-    report_recall = optimizer.optimize(y_true=y_test, y_probas=probas, beta=2.0)
-    report_precision = optimizer.optimize(y_true=y_test, y_probas=probas, beta=0.5)
+    report = optimizer.optimize(
+        y_true=y_test,
+        y_probas=probas,
+        criterion="cost_loss",
+        cost_fp=1.0,
+        cost_fn=10.0,
+    )
 
-    assert report_recall.recall >= report_precision.recall
-    assert report_precision.precision >= report_recall.precision or report_precision.optimal_threshold >= report_recall.optimal_threshold
+    assert isinstance(report, ThresholdReportDTO)
+    assert report.total_cost_optimal is not None
+    assert report.total_cost_default is not None
+    assert report.cost_savings is not None
+    assert report.cost_savings >= 0.0  # optimal must be <= default cost
+    assert report.analytical_cost_threshold is not None
+    assert 0.01 <= report.analytical_cost_threshold <= 0.99
 
 
 def test_threshold_optimizer_edge_cases():

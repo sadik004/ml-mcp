@@ -75,14 +75,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["Raw Model + Validation Data"] --> B["1. Pre-Audit: Calculate Brier Score & ECE"]
+    A["Raw Model + Validation Data"] --> B["1. Pre-Audit: Calculate Brier Score & Adaptive-Quantile ECE (Roelofs et al. 2022)"]
     B --> C{"Sample Size Check"}
     C -->|N < 1000| D["Platt Scaling (Sigmoid Logistic Fit)"]
     C -->|N >= 1000| E["Isotonic Regression (Piecewise Step Fit)"]
     D --> F["2. CalibratedClassifierCV with Stratified K-Fold"]
     E --> F
     F --> G["3. Post-Audit: Brier Lift & Reliability Verification"]
-    G --> H["Fitted Calibrated Estimator & ReportDTO"]
+    G --> H["Multiclass Simplex Normalization (Kull et al. 2019) & Conformal Coverage Guard (Angelopoulos 2023)"]
 ```
 
 ### প্রধান ফিচারসমূহ:

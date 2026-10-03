@@ -81,7 +81,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["True Labels (y_true) & Probabilities (y_probas)"] --> B["1. Validate Length & Edge Cases (All 0s or All 1s Guard)"]
-    B --> C["2. Sweep 100 Threshold Steps: t ∈ [0.01, 0.99]"]
+    B --> C["2. Exact PR-Curve Cutoffs & Analytical Closed-Form θ* (Sheng & Ling 2014)"]
     C --> D["3. Calculate Confusion Matrix: TP, FP, FN, TN at t"]
     D --> E["4. Compute Precision, Recall & F-beta Score"]
     E --> F["5. Select ArgMax(F-beta) ➔ Optimal Threshold (t*)"]

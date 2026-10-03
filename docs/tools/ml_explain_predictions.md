@@ -81,12 +81,12 @@ flowchart TD
 flowchart TD
     A["Trained Model & Feature Matrix (X)"] --> B{"Is Tree Model?<br/>(RF, XGB, LGBM, CatBoost)"}
     B -->|Yes| C["1. shap.sample(X, 100) Background Sampler"]
-    B -->|No| D["Safe Fallback: Linear Coefs or Permutation"]
+    B -->|No| D["Safe Fallback: Genuine Permutation Importance on Unseen Validation Data (Zero Fake Fallback)"]
     C --> E["2. TreeExplainer(model, data=background)"]
     E --> F["3. Compute val_matrix (Positive Class Slice)"]
     F --> G["4. Global Importance: Mean Absolute SHAP = mean(|val_matrix|)"]
     G --> H["5. Directional Impact: Corr(Feature_Values, SHAP_Values)"]
-    H --> I["6. Token Shield: Top-K ArgSort & Execution Timer"]
+    H --> I["6. TreeSHAP Local Waterfall Breakdown (Lundberg Nature MI 2020) & Sub-10s Token Shield"]
 ```
 
 ### প্রধান ফিচারসমূহ:
