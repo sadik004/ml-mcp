@@ -32,6 +32,7 @@ class FeaturePipelineReportDTO(BaseDTO):
     retained_features: List[str] = Field(default_factory=list, description="Final high-signal feature set")
     class_weights: Optional[Dict[str, float]] = Field(default=None, description="Computed class balancing sample weights")
     preprocessor_artifact_path: Optional[str] = Field(default=None, description="Path to fitted joblib pipeline artifact")
+    transformed_dataset_path: Optional[str] = Field(default=None, description="Path to saved transformed CSV dataset artifact")
     receipt_card: str = Field(description="Human-readable Markdown feature receipt card")
 
     def to_compact(self) -> Dict[str, Any]:
@@ -43,6 +44,7 @@ class FeaturePipelineReportDTO(BaseDTO):
             "pruned_count": len(self.pruned_features),
             "retained_count": len(self.retained_features),
             "class_weights": self.class_weights,
+            "transformed_dataset_path": self.transformed_dataset_path,
             "receipt_card": self.receipt_card,
         }
 

@@ -120,6 +120,7 @@ class SafetyCertificateReportDTO(BaseDTO):
     optimal_dollar_loss: float = Field(description="Expected loss using optimal p* threshold")
     net_dollar_savings: float = Field(description="Dollar savings achieved by optimal thresholding")
     false_positive_reduction_pct: float = Field(description="Percentage reduction in false positives")
+    false_negative_reduction_pct: float = Field(default=0.0, description="Percentage reduction in false negatives")
     raw_ece: float = Field(description="Raw Expected Calibration Error before Platt/Beta scaling")
     calibrated_ece: float = Field(description="Calibrated Expected Calibration Error")
     top_shap_drivers: List[str] = Field(default_factory=list, description="Top decision-driving features by TreeSHAP")
@@ -134,6 +135,7 @@ class SafetyCertificateReportDTO(BaseDTO):
             "optimal_threshold": round(self.optimal_threshold, 4),
             "net_dollar_savings": round(self.net_dollar_savings, 2),
             "false_positive_reduction_pct": round(self.false_positive_reduction_pct, 1),
+            "false_negative_reduction_pct": round(self.false_negative_reduction_pct, 1),
             "calibrated_ece": round(self.calibrated_ece * 100, 2),
             "conformal_coverage_pct": round(self.conformal_coverage_pct, 1),
             "top_shap_drivers": self.top_shap_drivers[:5],

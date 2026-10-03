@@ -95,6 +95,7 @@ class SafetyOrchestrator:
         opt_loss = float((fp_opt * cost_fp) + (fn_opt * cost_fn))
         savings = float(max(0.0, naive_loss - opt_loss))
         fp_reduction = float(((fp50 - fp_opt) / max(1, fp50)) * 100.0) if fp50 > fp_opt else 0.0
+        fn_reduction = float(((fn50 - fn_opt) / max(1, fn50)) * 100.0) if fn50 > fn_opt else 0.0
 
         # 3. TreeSHAP Feature Attributions
         top_shap_drivers: List[str] = []
@@ -213,6 +214,7 @@ class SafetyOrchestrator:
             optimal_dollar_loss=round(opt_loss, 2),
             net_dollar_savings=round(savings, 2),
             false_positive_reduction_pct=round(fp_reduction, 1),
+            false_negative_reduction_pct=round(fn_reduction, 1),
             raw_ece=round(raw_ece, 4),
             calibrated_ece=round(cal_ece, 4),
             top_shap_drivers=top_shap_drivers,

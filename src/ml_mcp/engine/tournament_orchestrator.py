@@ -13,6 +13,7 @@ Honest-validation protocol (Cawley & Talbot, JMLR 2010; Varma & Simon, 2006):
    (outer folds) are saved for downstream calibration / conformal steps in Phase 4.
 """
 from __future__ import annotations
+import json
 
 import logging
 import os
@@ -326,6 +327,18 @@ class TournamentOrchestrator:
         oof_path = os.path.join(self.artifact_dir, "oof_predictions.npy")
         joblib.dump(final_model, champion_path)
         np.save(oof_path, final_oof)
+
+        meta_path = os.path.join(self.artifact_dir, "tournament_metadata.json")
+        try:
+            with open(meta_path, "w", encoding="utf-8") as tmf:
+                json.dump({
+                    "target_column": getattr(y, "name", "target") or "target",
+                    "task_type": task_type,
+                    "champion_architecture": champion_name,
+                    "primary_metric": primary_metric,
+                }, tmf, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save tournament metadata: {e}")
 
         protocol = f"nested CV: {n_splits} outer folds x {INNER_SPLITS} inner folds, {tune_trials} trials/study"
 

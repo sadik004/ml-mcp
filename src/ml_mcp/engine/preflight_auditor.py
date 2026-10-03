@@ -104,8 +104,9 @@ class PreflightAuditor:
             label_detector = LabelErrorDetector()
             try:
                 label_rep = label_detector.detect_label_errors(df, target_column=target_column)
-                label_noise_pct = label_rep.noise_rate * 100.0
-                suspected_label_errors_count = label_rep.total_label_errors
+                rate = getattr(label_rep, "error_rate", getattr(label_rep, "noise_rate", 0.0))
+                label_noise_pct = float(rate * 100.0)
+                suspected_label_errors_count = int(getattr(label_rep, "total_errors", getattr(label_rep, "total_label_errors", 0)))
             except Exception as e:
                 logger.warning(f"Label error detection skipped: {e}")
 

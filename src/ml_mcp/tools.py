@@ -1,5 +1,6 @@
-﻿"""FastMCP Tool Registrations exposing all 25 production engines."""
+"""FastMCP Tool Registrations exposing all 25 production engines."""
 from __future__ import annotations
+import json
 
 import logging
 import os
@@ -457,17 +458,54 @@ def register_all_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def ml_run_model_tournament(
-        csv_path: str,
-        target_column: str,
+        csv_path: Optional[str] = None,
+        target_column: Optional[str] = None,
         task_type: Literal["classification", "regression"] = "classification",
         primary_metric: str = "pr_auc",
         n_splits: int = 5,
         tune_trials: int = 20,
         overfit_penalty_lambda: float = 1.0,
+        class_weights: Optional[Dict[str, float]] = None,
         view: Literal["compact", "detailed"] = "compact",
     ) -> Dict[str, Any]:
         """Phase 3 Master Model Tournament and Anti-Overfit Tuning: 5-fold CV baseline tournament, Optuna hyperparameter tuning penalized for train-val generalization gap and CV variance, and KISS stacking gate."""
         try:
+            # Fallback chaining to Phase 2 outputs
+            if not csv_path:
+                for cand in [
+                    os.path.join(".artifacts", "processed", "transformed_dataset.csv"),
+                    os.path.join(os.getcwd(), ".artifacts", "processed", "transformed_dataset.csv"),
+                ]:
+                    if os.path.exists(cand):
+                        csv_path = cand
+                        break
+                if not csv_path:
+                    raise ValueError("csv_path was not provided and no transformed dataset found at .artifacts/processed/transformed_dataset.csv")
+
+            meta_candidates = [
+                os.path.join(os.path.dirname(os.path.abspath(csv_path)), "feature_metadata.json"),
+                os.path.join(".artifacts", "processed", "feature_metadata.json"),
+                os.path.join(os.getcwd(), ".artifacts", "processed", "feature_metadata.json"),
+            ]
+            for mf_path in meta_candidates:
+                if os.path.exists(mf_path):
+                    try:
+                        with open(mf_path, "r", encoding="utf-8") as mf:
+                            fmeta = json.load(mf)
+                            if not target_column:
+                                target_column = fmeta.get("target_column")
+                            if not class_weights:
+                                class_weights = fmeta.get("class_weights")
+                            if "task_type" in fmeta and fmeta["task_type"] in ["classification", "regression"]:
+                                task_type = fmeta["task_type"]
+                        if target_column:
+                            break
+                    except Exception:
+                        pass
+
+            if not target_column:
+                raise ValueError("target_column must be specified if not found in feature_metadata.json")
+
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
@@ -480,6 +518,7 @@ def register_all_tools(mcp: FastMCP) -> None:
                 n_splits=n_splits,
                 tune_trials=tune_trials,
                 overfit_penalty_lambda=overfit_penalty_lambda,
+                class_weights=class_weights,
             )
             res = report.to_compact() if view == "compact" else report.model_dump()
             return sanitize_for_json(res)
@@ -585,18 +624,67 @@ def register_all_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def ml_certify_safety_and_decisions(
-        csv_path: str,
-        target_column: str,
+        csv_path: Optional[str] = None,
+        target_column: Optional[str] = None,
         cost_fp: float = 5.0,
         cost_fn: float = 250.0,
         model_path: Optional[str] = None,
+        oof_path: Optional[str] = None,
         view: Literal["compact", "detailed"] = "compact",
     ) -> Dict[str, Any]:
         """Phase 4 Master Model Certification: Probability calibration (Platt/Beta with ECE audit), Decision Curve Analysis (cost-loss threshold optimization for p*), Fast TreeSHAP attributions, Conformal Risk Control (95 percent coverage guarantee), and Helmholtz/IForest OOD anomaly cutoff."""
         try:
+            # Fallback chaining to Phase 2 / Phase 3 outputs
+            if not csv_path:
+                for cand in [
+                    os.path.join(".artifacts", "processed", "transformed_dataset.csv"),
+                    os.path.join(os.getcwd(), ".artifacts", "processed", "transformed_dataset.csv"),
+                ]:
+                    if os.path.exists(cand):
+                        csv_path = cand
+                        break
+                if not csv_path:
+                    raise ValueError("csv_path was not provided and no transformed dataset found at .artifacts/processed/transformed_dataset.csv")
+
+            if not target_column:
+                for mf_path in [
+                    os.path.join(os.path.dirname(os.path.abspath(csv_path)), "feature_metadata.json"),
+                    os.path.join(".artifacts", "models", "tournament_metadata.json"),
+                    os.path.join(".artifacts", "processed", "feature_metadata.json"),
+                    os.path.join(os.getcwd(), ".artifacts", "processed", "feature_metadata.json"),
+                ]:
+                    if os.path.exists(mf_path):
+                        try:
+                            with open(mf_path, "r", encoding="utf-8") as mf:
+                                target_column = json.load(mf).get("target_column")
+                                if target_column:
+                                    break
+                        except Exception:
+                            pass
+            if not target_column:
+                raise ValueError("target_column must be specified if not found in feature_metadata.json")
+
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
             y = df[target_column]
+
+            if not model_path:
+                default_model = os.path.join(".artifacts", "models", "champion_model.joblib")
+                if os.path.exists(default_model):
+                    model_path = default_model
+
+            if not oof_path:
+                default_oof = os.path.join(".artifacts", "models", "oof_predictions.npy")
+                if os.path.exists(default_oof):
+                    oof_path = default_oof
+
+            oof_probs = None
+            if oof_path and os.path.exists(oof_path):
+                try:
+                    oof_probs = np.load(oof_path)
+                except Exception:
+                    pass
+
             orchestrator = SafetyOrchestrator()
             if model_path and os.path.exists(model_path):
                 import joblib
@@ -616,6 +704,7 @@ def register_all_tools(mcp: FastMCP) -> None:
                 y=y,
                 cost_fp=cost_fp,
                 cost_fn=cost_fn,
+                oof_probs=oof_probs,
             )
             res = report.to_compact() if view == "compact" else report.model_dump()
             return sanitize_for_json(res)
@@ -1067,7 +1156,7 @@ def register_all_tools(mcp: FastMCP) -> None:
 
     # 26. ml_colab_status
     @mcp.tool()
-    async def ml_colab_status(session: str = "gpu") -> Dict[str, Any]:
+    async def ml_colab_status(session: Optional[str] = None) -> Dict[str, Any]:
         """Check active Google Colab GPU hardware, VRAM, and connection health."""
         try:
             from ml_mcp.colab_bridge import ColabCloudRunner
@@ -1081,10 +1170,10 @@ def register_all_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     async def ml_colab_execute(
         code: str,
-        session: str = "gpu",
+        session: Optional[str] = None,
         timeout: float = 120.0,
     ) -> Dict[str, Any]:
-        """Execute arbitrary Python / ML code directly on the remote Google Colab Tesla T4 GPU."""
+        """Execute arbitrary Python / ML code directly on the remote Google Colab GPU or CPU runtime."""
         try:
             from ml_mcp.colab_bridge import ColabCloudRunner
             runner = ColabCloudRunner()
@@ -1098,7 +1187,7 @@ def register_all_tools(mcp: FastMCP) -> None:
     async def ml_colab_upload(
         local_path: str,
         remote_path: str = "/content/data.csv",
-        session: str = "gpu",
+        session: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Upload a local dataset or script to the remote Google Colab cloud filesystem."""
         try:
@@ -1114,7 +1203,7 @@ def register_all_tools(mcp: FastMCP) -> None:
     async def ml_colab_download(
         remote_path: str,
         local_path: str,
-        session: str = "gpu",
+        session: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Download trained models, ONNX artifacts, or metrics from Google Colab to local storage."""
         try:
@@ -1127,7 +1216,7 @@ def register_all_tools(mcp: FastMCP) -> None:
 
     # 30. ml_colab_stop
     @mcp.tool()
-    async def ml_colab_stop(session: str = "gpu") -> Dict[str, Any]:
+    async def ml_colab_stop(session: Optional[str] = None) -> Dict[str, Any]:
         """Release the Google Colab GPU runtime to conserve compute units when work is done."""
         try:
             from ml_mcp.colab_bridge import ColabCloudRunner
@@ -1136,6 +1225,22 @@ def register_all_tools(mcp: FastMCP) -> None:
             return sanitize_for_json(result)
         except Exception as e:
             return format_error_envelope(e, "ml_colab_stop", ["session"])
+
+    # 30b. ml_colab_provision
+    @mcp.tool()
+    async def ml_colab_provision(
+        session: str = "gpu",
+        accelerator: Literal["T4", "A100", "L4", "CPU"] = "T4",
+        high_mem: bool = False,
+    ) -> Dict[str, Any]:
+        """Provision a fresh Google Colab compute runtime with requested GPU acceleration."""
+        try:
+            from ml_mcp.colab_bridge import ColabCloudRunner
+            runner = ColabCloudRunner()
+            result = runner.provision_session(session_name=session, accelerator=accelerator, high_mem=high_mem)
+            return sanitize_for_json(result)
+        except Exception as e:
+            return format_error_envelope(e, "ml_colab_provision", ["session", "accelerator"])
 
     # 31. ml_conformal_risk_control
     @mcp.tool()

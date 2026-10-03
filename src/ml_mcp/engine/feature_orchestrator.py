@@ -111,9 +111,29 @@ class FeaturePipelineOrchestrator:
 
         final_shape = [int(len(X_final)), int(X_final.shape[1])]
 
-        # 5. Persist Fitted Artifacts
+        # 5. Persist Fitted Artifacts and Processed Dataset
         preprocessor_path = os.path.join(self.artifact_dir, "preprocessor.joblib")
         joblib.dump(preprocessor, preprocessor_path)
+
+        # Attach target column to produce fully ready transformed dataset for Phase 3
+        transformed_df = X_final.copy()
+        transformed_df[target_column] = y.values
+        dataset_path = os.path.join(self.artifact_dir, "transformed_dataset.csv")
+        transformed_df.to_csv(dataset_path, index=False)
+
+        # Save metadata for downstream Phase 3 consumption
+        import json
+        meta_path = os.path.join(self.artifact_dir, "feature_metadata.json")
+        try:
+            with open(meta_path, "w", encoding="utf-8") as mf:
+                json.dump({
+                    "target_column": target_column,
+                    "task_type": task_type,
+                    "class_weights": class_weights,
+                    "retained_features": retained_features,
+                }, mf, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save feature metadata: {e}")
 
         # ----------------------------------------------------------------------
         # Executive Feature Receipt Card
@@ -155,5 +175,6 @@ class FeaturePipelineOrchestrator:
             retained_features=retained_features,
             class_weights=class_weights,
             preprocessor_artifact_path=preprocessor_path,
+            transformed_dataset_path=dataset_path,
             receipt_card=receipt_card,
         )
