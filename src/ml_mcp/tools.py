@@ -779,9 +779,11 @@ def register_all_tools(mcp: FastMCP) -> None:
     async def ml_optimize_inference(
         csv_path: str,
         target_column: str,
+        model_path: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Convert model to ONNX runtime format and benchmark single-sample P95/P99 latency."""
+        """Convert model to ONNX format with Level-3 graph fusion and benchmark single-sample P95/P99 latency."""
         try:
+            import joblib
             from sklearn.ensemble import RandomForestClassifier
             df = pd.read_csv(csv_path)
             X = df.drop(columns=[target_column])
@@ -791,12 +793,20 @@ def register_all_tools(mcp: FastMCP) -> None:
                 builder = DefensivePipelineBuilder()
                 pipe = builder.build_pipeline(df, target_column=target_column)
                 X = pipe.fit_transform(X, y)
-            clf = RandomForestClassifier(n_estimators=15, random_state=42)
-            clf.fit(X, y)
+            
+            # Load user model if provided, else fit baseline
+            if model_path and os.path.exists(model_path):
+                clf = joblib.load(model_path)
+            else:
+                clf = RandomForestClassifier(n_estimators=25, random_state=42)
+                clf.fit(X, y)
+                
             optimizer = ONNXOptimizer()
-            _, p95_ms, p99_ms = optimizer.convert_and_benchmark(clf, X[:5])
+            benchmark_sample = X[:100] if len(X) >= 100 else X
+            _, p95_ms, p99_ms = optimizer.convert_and_benchmark(clf, benchmark_sample)
             return sanitize_for_json({
                 "format": "onnx",
+                "graph_optimization_level": "ORT_ENABLE_ALL",
                 "p95_latency_ms": p95_ms,
                 "p99_latency_ms": p99_ms,
             })

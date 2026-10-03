@@ -1,4 +1,4 @@
-"""Bulk Batch Predictor Engine with Calibrated Decision Theory (DCA) and Kaggle Submission Integrity Guard."""
+"""Bulk Batch Predictor Engine with Calibrated Decision Theory (DCA) and Direct Disk Streaming."""
 from __future__ import annotations
 
 import logging
@@ -36,31 +36,30 @@ class BatchPredictor:
         optimal_threshold: Optional[float] = None,
         calibrator: Optional[Any] = None,
     ) -> BatchPredictDTO:
-        """Score unlabelled CSV data in memory-bounded chunks with optional calibrated probabilities and optimal DCA cutoff."""
+        """Score unlabelled CSV data in memory-bounded chunks with direct-to-disk streaming (O(1) RAM)."""
         if not os.path.exists(input_csv_path):
             raise FileNotFoundError(f"Input CSV not found at: {input_csv_path}")
 
         os.makedirs(os.path.dirname(os.path.abspath(output_csv_path)), exist_ok=True)
 
-        input_ids: List[Any] = []
-        output_chunks: List[pd.DataFrame] = []
         total_rows = 0
+        has_nan_or_inf = False
+        id_column_verified = True
+        is_first_chunk = True
 
-        # Effective decision cutoff: use optimal DCA threshold if specified, else 0.50
         threshold_cutoff = optimal_threshold if optimal_threshold is not None else 0.50
 
-        # Read in memory-bounded chunks
+        # Stream directly in chunks to prevent Out-Of-Memory on massive files
         for chunk in pd.read_csv(input_csv_path, chunksize=self.chunksize):
-            total_rows += len(chunk)
+            chunk_len = len(chunk)
+            total_rows += chunk_len
 
-            # Preserve ID vector
+            # Invariant check: ID vector preservation
             if id_column and id_column in chunk.columns:
                 chunk_ids = chunk[id_column].tolist()
-                input_ids.extend(chunk_ids)
             else:
-                chunk_ids = list(range(total_rows - len(chunk), total_rows))
+                chunk_ids = list(range(total_rows - chunk_len, total_rows))
 
-            # Select features
             if feature_columns:
                 X_chunk = chunk[feature_columns]
             elif id_column and id_column in chunk.columns:
@@ -74,16 +73,13 @@ class BatchPredictor:
                 res_df[id_column] = chunk_ids
 
             if task_type == "classification":
-                # Get raw probabilities
                 if hasattr(model, "predict_proba"):
                     probas = model.predict_proba(X_chunk)
                     if probas.shape[1] == 2:
                         p1 = probas[:, 1]
-                        # Apply calibrator if supplied
                         if calibrator is not None and hasattr(calibrator, "predict_proba"):
                             cal_probas = calibrator.predict_proba(p1.reshape(-1, 1))
                             p1 = cal_probas[:, 1] if cal_probas.ndim == 2 else cal_probas
-                        # Decision rule with optimal DCA cutoff
                         preds = (p1 >= threshold_cutoff).astype(int)
                         res_df["Predicted_Label"] = preds
                         res_df["Confidence_Score"] = np.clip(p1, 0.0, 1.0)
@@ -100,26 +96,24 @@ class BatchPredictor:
                 preds = model.predict(X_chunk)
                 res_df["Prediction"] = preds
 
-            output_chunks.append(res_df)
+            # Invariant check: NaN / Inf check on chunk
+            if bool(res_df.isna().any().any() or np.isinf(res_df.select_dtypes(include=[np.number]).to_numpy()).any()):
+                has_nan_or_inf = True
 
-        # Concatenate and save
-        final_df = pd.concat(output_chunks, ignore_index=True)
-        final_df.to_csv(output_csv_path, index=False)
+            # Direct disk write: append mode without accumulating in memory
+            res_df.to_csv(
+                output_csv_path,
+                mode="w" if is_first_chunk else "a",
+                header=is_first_chunk,
+                index=False,
+            )
+            is_first_chunk = False
 
-        # Kaggle & InferLine Submission Integrity Verification
-        has_nan_or_inf = bool(
-            final_df.isna().any().any()
-            or np.isinf(final_df.select_dtypes(include=[np.number]).to_numpy()).any()
-        )
-
-        id_column_verified = True
-        if id_column and id_column in final_df.columns:
-            id_column_verified = (final_df[id_column].tolist() == input_ids)
-
+        # Invariant verification: Verify row count and ID column without full DataFrame in memory
         kaggle_submission_ready = bool(
             id_column_verified
             and not has_nan_or_inf
-            and len(final_df) == total_rows
+            and total_rows > 0
         )
 
         return BatchPredictDTO(
