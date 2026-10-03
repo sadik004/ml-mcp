@@ -1,30 +1,24 @@
 # FastMCP Tool Reference Guide: `ml-mcp`
 
-> **Total Production Tools:** 25  
+> **Total Production Tools:** 37  
 > **Server Implementation:** `src/ml_mcp/server.py` & `src/ml_mcp/tools.py`  
 > **Communication Protocol:** Model Context Protocol (MCP) JSON-RPC 2.0 (Stdio & SSE)
 
 > **Phased Architectural Curriculum:** Explore the full 5-phase lifecycle in [docs/phases/](phases/README.md).
 >
-> **Deep-Dive Architectural Guides:** Detailed human stories, mathematical models, and internal mechanics are documented in [docs/tools/](tools/README.md):
-> - [ml_benchmark_models](tools/ml_benchmark_models.md)
-> - [ml_detect_target_leakage](tools/ml_detect_target_leakage.md)
-> - [ml_track_lineage](tools/ml_track_lineage.md)
-> - [ml_pseudo_label_loop](tools/ml_pseudo_label_loop.md)
+> **Deep-Dive Architectural Guides:** Detailed human stories, mathematical models, and internal mechanics are documented in [docs/tools/](tools/README.md).
 
 ---
 
 ## Tool Category Index
 
 1. [Core & Environment](#1-core--environment) (`ml_ping`)
-2. [Data Hygiene & Pre-flight Auditing](#2-data-hygiene--pre-flight-auditing) (`ml_audit_dataset`, `ml_detect_leakage`, `ml_check_collinearity`)
-3. [Defensive Preprocessing & Engineering](#3-defensive-preprocessing--engineering) (`ml_build_pipeline`, `ml_transform_target`, `ml_balance_data`, `ml_synthesize_features`)
-4. [Competitive Arena & Stacking](#4-competitive-arena--stacking) (`ml_run_tournament`, `ml_train_stacking`)
-5. [Optimization & Calibration](#5-optimization--calibration) (`ml_tune_hyperparameters`, `ml_calibrate_probabilities`)
-6. [Decision Theory & Explainability](#6-decision-theory--explainability) (`ml_optimize_threshold`, `ml_explain_shap`)
-7. [AI Safety & Robustness](#7-ai-safety--robustness) (`ml_detect_ood`, `ml_stress_test`, `ml_audit_fairness`)
-8. [Inference Speed & Serving](#8-inference-speed--serving) (`ml_export_onnx`, `ml_batch_predict`, `ml_pseudo_label`, `ml_generate_model_card`)
-9. [Delivery & Continuous Monitoring](#9-delivery--continuous-monitoring) (`ml_export_colab_notebook`, `ml_generate_dashboard`, `ml_monitor_drift`, `ml_generate_serving_bundle`)
+2. [Phase 1: Data Audit & Hygiene](#2-phase-1-data-audit--hygiene) (`ml_audit_dataset`, `ml_detect_target_leakage`, `ml_check_collinearity`, `ml_detect_label_errors`, `ml_verify_constraints`, `ml_track_lineage`)
+3. [Phase 2: Defensive Feature Engineering](#3-phase-2-defensive-feature-engineering) (`ml_handle_text_features`, `ml_auto_clean_and_pipe`, `ml_balance_classes`, `ml_synthesize_features`, `ml_prune_features`, `ml_transform_target`)
+4. [Phase 3: Tournament, Tuning & Stacking](#4-phase-3-tournament-tuning--stacking) (`ml_benchmark_models`, `ml_create_ensemble`, `ml_tune_hyperparameters`, `ml_pseudo_label_loop`)
+5. [Phase 4: Calibration, Safety & Explainability](#5-phase-4-calibration-safety--explainability) (`ml_calibrate_probabilities`, `ml_tune_threshold_and_errors`, `ml_explain_predictions`, `ml_detect_ood`, `ml_stress_test_and_fairness`, `ml_conformal_risk_control`)
+6. [Phase 5: Inference, Packaging & Operations](#6-phase-5-inference-packaging--operations) (`ml_batch_predict`, `ml_export_and_document`, `ml_optimize_inference`, `ml_generate_eval_dashboard`, `ml_generate_serving_api`, `ml_generate_docker_spec`, `ml_monitor_drift`)
+7. [Phase 6: Remote Cloud & Google Colab GPU](#7-phase-6-remote-cloud--google-colab-gpu) (`ml_generate_colab_notebook`, `ml_colab_status`, `ml_colab_execute`, `ml_colab_upload`, `ml_colab_download`, `ml_colab_stop`, `ml_cancel_job`)
 
 ---
 
@@ -33,23 +27,11 @@
 ### `ml_ping`
 Verifies server health, active Python environment, runtime platform, and GPU acceleration status.
 - **Parameters:** None
-- **Returns:**
-  ```json
-  {
-    "status": "healthy",
-    "version": "0.1.0",
-    "cuda_available": false,
-    "device": "cpu",
-    "gpu_count": 0,
-    "platform": "Windows-11-...",
-    "python_version": "3.14.0",
-    "registered_tools_count": 25
-  }
-  ```
+- **Returns:** JSON object containing status, python version, platform, and registered tools count.
 
 ---
 
-## 2. Data Hygiene & Pre-flight Auditing
+## 2. Phase 1: Data Audit & Hygiene
 
 ### `ml_audit_dataset`
 Performs a comprehensive pre-flight sanity audit on a tabular CSV dataset.
@@ -57,239 +39,314 @@ Performs a comprehensive pre-flight sanity audit on a tabular CSV dataset.
   - `csv_path` (`str`, required): Absolute or relative path to CSV file.
   - `target_column` (`str`, optional): Name of the prediction target column.
   - `view` (`"compact" | "detailed"`, default: `"compact"`): Token shield view mode.
-- **Outputs Checked:**
-  - Sentinel values (`-999`, `-1`, `9999`, `"?"`, `"N/A"`, `"missing"`).
-  - Missing value percentages and near-empty columns ($\ge 90\%$ null).
-  - Constant features (zero variance) and high-cardinality ID columns ($\ge 95\%$ unique).
-  - Row duplicates and class imbalance ratios.
+- **Outputs Checked:** Sentinel values, missing percentages, zero-variance constants, high-cardinality IDs, row duplicates, and class imbalance.
 
-### `ml_detect_leakage`
+### `ml_detect_target_leakage`
 Audits features for target leakage and unrealistically high correlation with the target.
 - **Parameters:**
   - `csv_path` (`str`, required): Path to dataset CSV.
   - `target_column` (`str`, required): Target label or dependent variable.
   - `correlation_threshold` (`float`, default: `0.95`): Pearson/Spearman cutoff for suspicious features.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
-- **Key Warnings:** Flags perfect predictors (AUC = 1.0 or $R^2 = 1.0$) and future-dated timestamp columns.
+- **Key Warnings:** Flags perfect predictors (AUC = 1.0 or R^2 = 1.0) and future-dated timestamp columns.
 
 ### `ml_check_collinearity`
 Calculates Variance Inflation Factor (VIF) and Pearson/Spearman correlation matrices.
 - **Parameters:**
   - `csv_path` (`str`, required): Path to dataset CSV.
+  - `target_column` (`str`, optional): Target column used for ANOVA F-score competitive twin retention.
   - `vif_threshold` (`float`, default: `10.0`): Cutoff for multi-collinear features.
   - `correlation_cutoff` (`float`, default: `0.90`): Maximum allowed pairwise feature correlation.
+  - `output_path` (`str`, optional): Path to save pruned dataset.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
 - **Recommendation:** Generates a list of redundant features to drop without losing model capacity.
 
+### `ml_detect_label_errors`
+Detects corrupt, mislabeled, or noisy ground truth labels using MIT Confident Learning (Northcutt et al., 2021).
+- **Parameters:**
+  - `csv_path` (`str`, required): Path to training dataset CSV.
+  - `target_column` (`str`, required): Ground truth label column.
+  - `cv_splits` (`int`, default: `5`): Out-of-fold cross-validation folds.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+- **Outputs:** Confident joint matrix, estimated noise rate, self-confidence thresholds, and ranked suspicious sample indices.
+
+### `ml_verify_constraints`
+Validates physical limits, non-negativity, and automated 3x-IQR statistical outlier limits inspired by Amazon Deequ (VLDB 2018).
+- **Parameters:**
+  - `csv_path` (`str`, required): Path to dataset CSV.
+  - `constraints` (`dict`, optional): User-specified constraints (e.g. min, max, allowed values, regex).
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+- **Outputs:** Constraint violation counts, failure percentages, and schema integrity scorecard.
+
+### `ml_track_lineage`
+Cryptographic artifact and dataset lineage tracker computing SHA-256 digests and Git commit hashes.
+- **Parameters:**
+  - `job_id` (`str`, required): Tracking job identifier.
+  - `data_path` (`str`, required): Path to dataset artifact.
+  - `model_path` (`str`, optional): Path to model serialized checkpoint.
+  - `parameters` (`dict`, optional): Execution hyperparameters.
+  - `metrics` (`dict`, optional): Evaluation metric key-value pairs.
+- **Outputs:** Immutable lineage JSON record with git_commit_sha, data_sha256, and timestamps.
+
 ---
 
-## 3. Defensive Preprocessing & Engineering
+## 3. Phase 2: Defensive Feature Engineering
 
-### `ml_build_pipeline`
-Constructs a zero-leakage, reproducible Scikit-Learn `ColumnTransformer` and `Pipeline`.
+### `ml_handle_text_features`
+Detects and embeds free-form natural language text columns while rejecting random UUIDs and hashes.
 - **Parameters:**
-  - `numeric_columns` (`list[str]`, required): List of continuous numeric features.
-  - `categorical_columns` (`list[str]`, required): List of discrete categorical features.
-  - `scaler` (`"robust" | "standard" | "minmax"`, default: `"robust"`): Numeric scaling method.
-  - `cat_imputer` (`"most_frequent" | "constant"`, default: `"most_frequent"`): Categorical imputer.
-  - `num_imputer` (`"median" | "mean"`, default: `"median"`): Numeric imputer.
-- **Safeguard:** Injects omnipresent imputers to handle future unobserved production NaNs.
+  - `csv_path` (`str`, required): Path to CSV dataset.
+- **Outputs:** Text column detections, token statistics, and representation recommendations.
 
-### `ml_transform_target`
-Linearizes highly skewed continuous targets using Log1p or Box-Cox transformations.
+### `ml_auto_clean_and_pipe`
+Constructs a zero-leakage, reproducible Scikit-Learn `ColumnTransformer` and preprocessing pipeline.
 - **Parameters:**
-  - `values` (`list[float]`, required): Raw target vector.
-  - `method` (`"auto" | "log1p" | "box-cox"`, default: `"auto"`): Transformation technique.
-- **Outputs:** Transformed values, optimal lambda parameter, and inverse-transform function handles.
+  - `csv_path` (`str`, required): Path to dataset CSV.
+  - `target_column` (`str`, required): Prediction target.
+  - `numeric_imputer` (`"median" | "mean" | "knn"`, default: `"median"`)
+  - `categorical_imputer` (`"most_frequent" | "constant"`, default: `"most_frequent"`)
+  - `scaler` (`"robust" | "standard" | "minmax"`, default: `"robust"`)
+  - `output_dir` (`str`, optional): Directory to persist pickled pipeline.
+- **Outputs:** Persisted pipeline.joblib, transformed sample preview, and column routing manifest.
 
-### `ml_balance_data`
-Mitigates extreme classification class imbalance using synthetic resampling techniques.
+### `ml_balance_classes`
+Rebalances imbalanced classification datasets using SMOTE, ADASYN, Random Under Sampler, or Balanced Class Weights.
 - **Parameters:**
-  - `csv_path` (`str`, required): Training dataset.
-  - `target_column` (`str`, required): Binary or multi-class target column.
-  - `method` (`"smote" | "borderline" | "random"`, default: `"smote"`): Balancing strategy.
-  - `sampling_strategy` (`float | str`, default: `"auto"`): Desired minority-to-majority ratio.
+  - `csv_path` (`str`, required): Path to dataset CSV.
+  - `target_column` (`str`, required): Classification target.
+  - `strategy` (`"auto" | "smote" | "undersample" | "weights"`, default: `"auto"`)
+  - `output_path` (`str`, optional): Path to save balanced dataset.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_synthesize_features`
-Generates interaction terms, polynomial combinations, and domain feature ratios.
+Synthesizes non-linear polynomial combinations, interaction ratios, and log/sqrt transformations.
 - **Parameters:**
-  - `csv_path` (`str`, required): Input CSV.
-  - `feature_pairs` (`list[tuple[str, str]]`, optional): Specific feature interaction pairs.
-  - `include_polynomials` (`bool`, default: `false`): Include degree-2 polynomial expansion.
-
----
-
-## 4. Competitive Arena & Stacking
-
-### `ml_run_tournament`
-Launches an 8-model competitive tournament across LightGBM, XGBoost, CatBoost, Random Forest, Extra Trees, Gradient Boosting, Ridge/Logistic Regression, and Multi-Layer Perceptron (MLP).
-- **Parameters:**
-  - `csv_path` (`str`, required): Tabular dataset.
-  - `target_column` (`str`, required): Prediction target.
-  - `task_type` (`"classification" | "regression"`, default: `"classification"`)
-  - `metric` (`str`, default: `"f1"`): Evaluation metric (`"f1"`, `"roc_auc"`, `"accuracy"`, `"rmse"`, `"r2"`).
-  - `cv_folds` (`int`, default: `5`): Stratified K-Fold cross-validation count.
-  - `device` (`"auto" | "cuda" | "cpu"`, default: `"auto"`): Hardware accelerator.
+  - `csv_path` (`str`, required): Path to CSV dataset.
+  - `target_column` (`str`, optional): Target column to guard against target leakage.
+  - `max_features` (`int`, default: `20`): Maximum synthetic features to generate.
+  - `output_path` (`str`, optional): Path to save enriched dataset.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
-- **Returns:** Leaderboard ranking, champion model name, per-model scores, and standard deviations.
 
-### `ml_train_stacking`
-Builds an Out-of-Fold (OOF) Stacking Ensemble using the top $K$ tournament models as base estimators and Logistic Regression / Ridge as the meta-learner.
+### `ml_prune_features`
+Prunes uninformative and noisy features using recursive feature elimination (RFE), Lasso L1, or Permutation Importance.
 - **Parameters:**
-  - `csv_path` (`str`, required): Tabular dataset.
-  - `target_column` (`str`, required): Target column.
-  - `top_k` (`int`, default: `3`): Number of base estimators to ensemble.
-  - `cv_folds` (`int`, default: `5`): Cross-validation folds for OOF predictions.
-- **Guarantee:** Strict leak-free cross-validation guarantees meta-features do not overfit.
+  - `csv_path` (`str`, required): Path to dataset CSV.
+  - `target_column` (`str`, required): Prediction target.
+  - `method` (`"mutual_info" | "l1" | "rf_importance"`, default: `"mutual_info"`)
+  - `top_k` (`int`, optional): Retain top K features.
+  - `output_path` (`str`, optional): Path to save pruned dataset.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+
+### `ml_transform_target`
+Applies defensive target transformations (Box-Cox, Yeo-Johnson, Log1p) for skewed regression targets.
+- **Parameters:**
+  - `csv_path` (`str`, required): Path to dataset CSV.
+  - `target_column` (`str`, required): Regression target column.
+  - `method` (`"auto" | "log1p" | "box-cox" | "yeo-johnson"`, default: `"auto"`)
+  - `output_path` (`str`, optional): Path to save transformed dataset.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ---
 
-## 5. Optimization & Calibration
+## 4. Phase 3: Tournament, Tuning & Stacking
+
+### `ml_benchmark_models`
+Runs an automated tournament across LightGBM, XGBoost, CatBoost, Random Forest, and Ridge/LogisticRegression.
+- **Parameters:**
+  - `csv_path` (`str`, required): Path to preprocessed CSV.
+  - `target_column` (`str`, required): Prediction target.
+  - `task_type` (`"auto" | "classification" | "regression"`, default: `"auto"`)
+  - `metric` (`str`, optional): Target metric (e.g. "roc_auc", "f1", "neg_root_mean_squared_error").
+  - `cv_splits` (`int`, default: `5`): Stratified/K-Fold splits.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+
+### `ml_create_ensemble`
+Constructs multi-model Stacking and Voting ensembles with out-of-fold meta-learners.
+- **Parameters:**
+  - `csv_path` (`str`, required): Path to dataset.
+  - `target_column` (`str`, required): Prediction target.
+  - `models` (`list[str]`, optional): Models to include in ensemble.
+  - `meta_learner` (`str`, default: `"logistic"` / `"ridge"`): Meta-model.
+  - `output_path` (`str`, optional): Path to persist ensemble checkpoint.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_tune_hyperparameters`
-Executes Optuna Bayesian Optimization over tree depth, learning rate, regularization, and subsampling.
+Conducts Bayesian optimization with Optuna to search parameter spaces.
 - **Parameters:**
-  - `model_name` (`str`, required): Name of estimator (`"lightgbm"`, `"xgboost"`, `"random_forest"`).
-  - `csv_path` (`str`, required): Training dataset.
-  - `target_column` (`str`, required): Target column.
-  - `n_trials` (`int`, default: `30`): Optuna trials count.
-  - `timeout_seconds` (`int`, default: `300`): Hard execution time boundary.
-- **Pruning:** Integrates Median Pruner to abort unpromising trials within early epochs.
+  - `csv_path` (`str`, required): Path to dataset.
+  - `target_column` (`str`, required): Prediction target.
+  - `model_name` (`str`, default: `"lightgbm"`): Model architecture to tune.
+  - `n_trials` (`int`, default: `30`): Number of Bayesian optimization trials.
+  - `timeout_seconds` (`int`, default: `300`): Maximum budget time.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+
+### `ml_pseudo_label_loop`
+Executes confidence-gated semi-supervised pseudo-labeling for unlabeled datasets.
+- **Parameters:**
+  - `labeled_csv_path` (`str`, required): Path to ground-truth training set.
+  - `unlabeled_csv_path` (`str`, required): Path to unlabeled test set.
+  - `target_column` (`str`, required): Prediction target column.
+  - `confidence_threshold` (`float`, default: `0.90`): Minimum probability for pseudo-labeling.
+  - `output_path` (`str`, optional): Path to save expanded dataset.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+
+---
+
+## 5. Phase 4: Calibration, Safety & Explainability
 
 ### `ml_calibrate_probabilities`
-Calibrates model output probabilities to match true empirical likelihoods.
+Calibrates model output probabilities using Isotonic Regression or Platt Scaling (Sigmoid).
 - **Parameters:**
-  - `model_path` (`str`, required): Path to pickled/joblib model.
-  - `csv_path` (`str`, required): Validation dataset.
-  - `target_column` (`str`, required): Target labels.
-  - `method` (`"platt" | "isotonic"`, default: `"platt"`): Calibration algorithm.
-- **Outputs:** Brier score reduction, Expected Calibration Error (ECE), and calibration curve bins.
+  - `csv_path` (`str`, required): Evaluation dataset CSV.
+  - `target_column` (`str`, required): Binary classification ground truth.
+  - `model_path` (`str`, required): Persisted model checkpoint.
+  - `method` (`"isotonic" | "sigmoid"`, default: `"isotonic"`)
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
----
-
-## 6. Decision Theory & Explainability
-
-### `ml_optimize_threshold`
-Finds the mathematically optimal classification decision boundary given an asymmetric business cost matrix.
+### `ml_tune_threshold_and_errors`
+Finds the optimal decision threshold minimizing financial asymmetric loss and cost matrix.
 - **Parameters:**
-  - `probabilities` (`list[float]`, required): Predicted positive class probabilities.
-  - `y_true` (`list[int]`, required): Ground truth binary labels.
-  - `cost_fp` (`float`, default: `1.0`): Financial cost of False Positive.
-  - `cost_fn` (`float`, default: `5.0`): Financial cost of False Negative.
-  - `metric` (`"cost" | "f1" | "youden"`, default: `"f1"`): Optimization objective.
-- **Returns:** Optimal decision threshold (e.g., `0.342` instead of default `0.500`), net business savings, confusion matrix at optimal threshold.
+  - `csv_path` (`str`, required): Validation dataset CSV.
+  - `target_column` (`str`, required): Ground truth binary label.
+  - `model_path` (`str`, required): Model checkpoint.
+  - `fp_cost` (`float`, default: `1.0`): Financial penalty for False Positives.
+  - `fn_cost` (`float`, default: `5.0`): Financial penalty for False Negatives.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
-### `ml_explain_shap`
-Generates sub-10 second TreeSHAP local and global attributions for tree models.
+### `ml_explain_predictions`
+Computes exact TreeSHAP values, global feature importances, and local sample explanations.
 - **Parameters:**
-  - `model_path` (`str`, required): Fitted estimator path.
-  - `csv_path` (`str`, required): Sample dataset for explanation.
-  - `sample_size` (`int`, default: `100`): Background sample size for fast calculation.
-  - `top_k` (`int`, default: `10`): Number of top influential features to report.
-- **Fallback:** Uses kernel explainer or permutation importance if model is non-tree.
-
----
-
-## 7. AI Safety & Robustness
+  - `csv_path` (`str`, required): Dataset CSV.
+  - `target_column` (`str`, required): Target label.
+  - `model_path` (`str`, required): Model checkpoint.
+  - `sample_index` (`int`, optional): Local explanation sample row index.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ### `ml_detect_ood`
-Identifies Out-of-Distribution (OOD) test inputs using Mahalanobis Distance and Isolation Forest.
+Calculates Mahalanobis distance and Isolation Forest anomaly scores to detect Out-of-Distribution inputs.
 - **Parameters:**
-  - `train_csv_path` (`str`, required): In-distribution training reference data.
-  - `test_csv_path` (`str`, required): Query test observations to audit.
-  - `contamination` (`float`, default: `0.05`): Expected anomalous fraction.
-- **Output:** Anomaly scores, binary OOD flags, and feature drift attribution.
+  - `reference_csv_path` (`str`, required): In-distribution training reference CSV.
+  - `query_csv_path` (`str`, required): Query inference CSV to audit.
+  - `threshold_percentile` (`float`, default: `95.0`): Anomaly detection percentile.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
-### `ml_stress_test`
-Subject models to simulated real-world data corruption: Gaussian noise and Missing Completely At Random (MCAR).
+### `ml_stress_test_and_fairness`
+Performs adversarial input perturbation (Gaussian noise, missing injection) and sub-group fairness slice audits.
 - **Parameters:**
-  - `model_path` (`str`, required): Saved model artifact.
-  - `csv_path` (`str`, required): Clean test dataset.
-  - `target_column` (`str`, required): Target labels.
-  - `noise_levels` (`list[float]`, default: `[0.01, 0.05, 0.10]`): Noise variances.
-  - `missing_rates` (`list[float]`, default: `[0.05, 0.10, 0.20]`): Fraction of masked values.
-- **Score:** Comprehensive Robustness Score ($0 - 100$).
-
-### `ml_audit_fairness`
-Audits sub-group demographic parity, disparate impact ratios, and equal opportunity margins.
-- **Parameters:**
-  - `csv_path` (`str`, required): Evaluation dataset with predictions.
-  - `sensitive_column` (`str`, required): Protected demographic attribute (gender, age, race).
+  - `csv_path` (`str`, required): Evaluation dataset CSV.
   - `target_column` (`str`, required): Ground truth label.
-  - `prediction_column` (`str`, required): Binary predicted class.
-- **Governance:** Checks EEOC 80% (4/5ths) disparate impact rule compliance.
+  - `model_path` (`str`, required): Model checkpoint.
+  - `protected_attributes` (`list[str]`, optional): Demographics / fairness columns.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
+
+### `ml_conformal_risk_control`
+Provides rigorous finite-sample mathematical error-rate guarantees via Split Conformal Prediction and Learn-then-Test (Angelopoulos & Bates, 2021).
+- **Parameters:**
+  - `csv_path` (`str`, required): Calibration set CSV.
+  - `target_column` (`str`, required): Ground truth target.
+  - `model_path` (`str`, required): Model checkpoint.
+  - `alpha` (`float`, default: `0.10`): Maximum tolerated risk bound (1 - alpha = 90% coverage).
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ---
 
-## 8. Inference Speed & Serving
-
-### `ml_export_onnx`
-Converts Scikit-Learn pipelines and GBDT models into high-performance Open Neural Network Exchange (ONNX) format.
-- **Parameters:**
-  - `model_path` (`str`, required): Input `.joblib` model.
-  - `output_path` (`str`, required): Target `.onnx` output path.
-  - `target_dtype` (`"float32" | "float16"`, default: `"float32"`): Floating-point precision.
-- **Verification:** Automatically performs round-trip inference comparison against original estimator.
+## 6. Phase 5: Inference, Packaging & Operations
 
 ### `ml_batch_predict`
-Executes memory-safe, chunked batch predictions for massive datasets with Kaggle submission validation.
+Executes high-throughput chunked batch inference on massive CSV datasets.
 - **Parameters:**
-  - `model_path` (`str`, required): Model file (`.joblib` or `.onnx`).
-  - `test_csv_path` (`str`, required): Unlabeled test CSV.
-  - `output_csv_path` (`str`, required): Destination CSV for predictions.
-  - `id_column` (`str`, optional): ID column to preserve for Kaggle submissions.
-  - `chunk_size` (`int`, default: `10000`): Chunk size for memory-bounded processing.
+  - `csv_path` (`str`, required): Test input CSV.
+  - `model_path` (`str`, required): Model checkpoint.
+  - `output_path` (`str`, optional): Path to save predictions CSV.
+  - `chunk_size` (`int`, default: `10000`): Chunk size for OOM avoidance.
 
-### `ml_pseudo_label`
-Extracts high-confidence predictions on unlabeled data to enrich the training set.
+### `ml_export_and_document`
+Generates comprehensive Hugging Face / Mitchell et al. Model Card markdown documentation.
 - **Parameters:**
-  - `model_path` (`str`, required): Trained model.
-  - `unlabeled_csv_path` (`str`, required): Unlabeled observations.
-  - `confidence_threshold` (`float`, default: `0.90`): Minimum probability cutoff.
-  - `max_pseudo_labels` (`int`, default: `1000`): Maximum pseudo-labels to generate.
+  - `model_path` (`str`, required): Model checkpoint.
+  - `model_name` (`str`, required): Model name.
+  - `metrics` (`dict`, required): Performance score dictionary.
+  - `output_path` (`str`, optional): Path to write `MODEL_CARD.md`.
 
-### `ml_generate_model_card`
-Synthesizes a production-ready `MODEL_CARD.md` adhering to Mitchell et al. standards.
+### `ml_optimize_inference`
+Converts Scikit-Learn / LightGBM models into ONNX runtime graph format with fp16/int8 quantization.
 - **Parameters:**
-  - `model_name` (`str`, required): Name of model.
-  - `metrics` (`dict`, required): Performance dictionary (Accuracy, F1, ROC-AUC, Latency).
-  - `intended_use` (`str`, optional): Production application context.
-  - `output_path` (`str`, default: `"MODEL_CARD.md"`): Destination file path.
+  - `model_path` (`str`, required): Scikit-Learn `.joblib` model.
+  - `output_path` (`str`, optional): Target `.onnx` path.
+  - `quantize` (`bool`, default: `False`): Apply dynamic int8 quantization.
+
+### `ml_generate_eval_dashboard`
+Generates a standalone, beautiful HTML/JavaScript evaluation dashboard with interactive charts.
+- **Parameters:**
+  - `metrics` (`dict`, required): Model evaluation metrics.
+  - `confusion_matrix` (`list[list[int]]`, optional): Confusion matrix.
+  - `feature_importances` (`dict[str, float]`, optional): Feature importances.
+  - `output_path` (`str`, optional): Path to write `eval_dashboard.html`.
+
+### `ml_generate_serving_api`
+Scaffolds a production-ready FastAPI serving microservice with Pydantic request/response schemas.
+- **Parameters:**
+  - `model_path` (`str`, required): Path to model checkpoint.
+  - `feature_names` (`list[str]`, required): Expected input features.
+  - `output_dir` (`str`, optional): Target directory for API code.
+
+### `ml_generate_docker_spec`
+Generates minimal, non-root, multi-stage production Dockerfile and `docker-compose.yml` for serving.
+- **Parameters:**
+  - `app_dir` (`str`, required): Root directory of serving API.
+  - `port` (`int`, default: `8000`): HTTP serving port.
+
+### `ml_monitor_drift`
+Audits data drift between baseline reference and production inference using Population Stability Index (PSI) and Wasserstein Distance.
+- **Parameters:**
+  - `baseline_csv_path` (`str`, required): Training baseline CSV.
+  - `current_csv_path` (`str`, required): Current production inference CSV.
+  - `psi_threshold` (`float`, default: `0.20`): PSI drift alert threshold.
+  - `view` (`"compact" | "detailed"`, default: `"compact"`)
 
 ---
 
-## 9. Delivery & Continuous Monitoring
+## 7. Phase 6: Remote Cloud & Google Colab GPU
 
-### `ml_export_colab_notebook`
-Generates a complete, executable 8-cell Jupyter `.ipynb` notebook ready to upload directly to Google Colab.
+### `ml_generate_colab_notebook`
+Generates a complete, production-ready `.ipynb` Jupyter notebook for remote execution on Google Colab.
 - **Parameters:**
-  - `target_column` (`str`, required): Target feature.
-  - `output_path` (`str`, default: `"ml_pipeline.ipynb"`): Output notebook path.
-  - `task_type` (`"classification" | "regression"`, default: `"classification"`)
-  - `dataset_url` (`str`, optional): Remote CSV URL (e.g. Kaggle / raw GitHub link).
+  - `pipeline_steps` (`list[str]`, required): Selected pipeline stages.
+  - `dataset_url` (`str`, optional): Direct download link or Google Drive link for dataset.
+  - `output_path` (`str`, optional): Path to write notebook file.
 
-### `ml_generate_dashboard`
-Compiles an interactive, standalone HTML dashboard containing embedded SVG confusion matrices and SHAP bar charts.
+### `ml_colab_status`
+Checks remote Google Colab GPU health, Tesla T4 VRAM availability, and bridge connectivity.
 - **Parameters:**
-  - `model_name` (`str`, required): Champion model name.
-  - `metrics` (`dict`, required): Model evaluation metrics.
-  - `top_features` (`list[tuple[str, float]]`, required): Feature importances.
-  - `output_path` (`str`, default: `"dashboard.html"`): Output file location.
-- **Feature:** Zero external CDN dependencies; renders natively in any browser offline.
+  - `session` (`str`, default: `"gpu"`): Colab session identifier.
 
-### `ml_monitor_drift`
-Computes Population Stability Index (PSI) and Kolmogorov-Smirnov (KS-test) statistics between reference training distributions and current production inputs.
+### `ml_colab_execute`
+Executes arbitrary Python and Machine Learning code directly on remote Google Colab GPU.
 - **Parameters:**
-  - `reference_csv_path` (`str`, required): Historical baseline data.
-  - `current_csv_path` (`str`, required): Live incoming production data.
-  - `psi_threshold` (`float`, default: `0.2`): PSI cutoff indicating substantial drift.
-  - `view` (`"compact" | "detailed"`, default: `"compact"`)
-- **Traffic Light System:** Green ($PSI < 0.1$), Yellow ($0.1 \le PSI < 0.2$), Red ($PSI \ge 0.2$, triggering retrain alarm).
+  - `code` (`str`, required): Python script or bash command to run on Colab.
+  - `session` (`str`, default: `"gpu"`): Colab session ID.
+  - `timeout` (`int`, default: `120`): Execution timeout in seconds.
 
-### `ml_generate_serving_bundle`
-Synthesizes a clean 3-tier FastAPI router (`app/routers/predict.py`) and a production multi-stage Docker build specification (`Dockerfile` & `docker-compose.yml`).
+### `ml_colab_upload`
+Uploads local CSV datasets, models, or scripts directly into Google Colab filesystem.
 - **Parameters:**
-  - `model_path` (`str`, required): Trained model artifact.
-  - `features` (`list[str]`, required): Expected input features.
-  - `output_dir` (`str`, default: `"serving_bundle"`): Destination directory.
-- **Includes:** Pydantic input models, `/health`, `/predict`, non-root container user, and automated container healthcheck.
+  - `local_path` (`str`, required): Local file path.
+  - `remote_path` (`str`, required): Target destination on Colab.
+  - `session` (`str`, default: `"gpu"`)
+
+### `ml_colab_download`
+Downloads trained models, checkpoints, or metric reports from Colab to local workspace.
+- **Parameters:**
+  - `remote_path` (`str`, required): File path on Google Colab.
+  - `local_path` (`str`, required): Local target file path.
+  - `session` (`str`, default: `"gpu"`)
+
+### `ml_colab_stop`
+Terminates remote Google Colab GPU session to release cloud compute resources.
+- **Parameters:**
+  - `session` (`str`, default: `"gpu"`)
+
+### `ml_cancel_job`
+Cancels long-running background asynchronous ML jobs.
+- **Parameters:**
+  - `job_id` (`str`, required): Unique job ID to abort.

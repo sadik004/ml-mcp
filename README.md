@@ -133,41 +133,51 @@ Step-by-step setup instructions for Google Colab are available in [docs/COLAB_IN
 
 ---
 
-## 🛠️ The 25 FastMCP Production Tools
+## 🛠️ The 37 FastMCP Production Tools
 
-All tools are decorated with `@mcp.tool()`, protected by the Token Shield, and return sanitized JSON-RPC responses:
+All tools are decorated with @mcp.tool(), protected by the Token Shield, and return sanitized JSON-RPC responses:
 
 | # | Tool Identifier | Category | Primary Functionality |
 |---|---|---|---|
-| **1** | `ml_ping` | **Core** | Server health, Python environment, platform & CUDA GPU detection. |
-| **2** | `ml_audit_dataset` | **Data Hygiene** | Pre-flight audit for sentinels (`-999`, `?`), nulls, constant features, and duplicates. |
-| **3** | `ml_detect_leakage` | **Data Hygiene** | Identifies target leakage, future timestamp features, and perfect predictors. |
-| **4** | `ml_check_collinearity` | **Data Hygiene** | Variance Inflation Factor (VIF) and pairwise correlation matrix analysis. |
-| **5** | `ml_build_pipeline` | **Preprocessing** | Zero-leakage Scikit-Learn `ColumnTransformer` with omnipresent median/mode imputers. |
-| **6** | `ml_transform_target` | **Preprocessing** | Linearizes highly skewed continuous targets (Log1p & Box-Cox transformations). |
-| **7** | `ml_balance_data` | **Preprocessing** | Synthetic class imbalance resampling (SMOTE, BorderlineSMOTE, RandomOversampler). |
-| **8** | `ml_synthesize_features` | **Preprocessing** | Generates polynomial features, mathematical ratios, and interaction terms. |
-| **9** | `ml_run_tournament` | **Modeling** | 8-model competitive tournament (LightGBM, XGBoost, CatBoost, RF, ET, GB, Ridge, MLP). |
-| **10** | `ml_train_stacking` | **Modeling** | Out-of-fold (OOF) Stacking Ensemble meta-learner using top tournament models. |
-| **11** | `ml_tune_hyperparameters` | **Optimization** | Optuna Bayesian optimization with Median Pruning over tree parameters. |
-| **12** | `ml_calibrate_probabilities` | **Calibration** | Platt scaling (Logistic) and Isotonic Regression for true posterior calibration. |
-| **13** | `ml_optimize_threshold` | **Decision** | Asymmetric cost-matrix optimization for optimal decision boundaries. |
-| **14** | `ml_explain_shap` | **Explainability** | Sub-10s TreeSHAP local attributions and global feature rankings. |
-| **15** | `ml_detect_ood` | **AI Safety** | Out-of-Distribution (OOD) detection via Mahalanobis distance & Isolation Forests. |
-| **16** | `ml_stress_test` | **AI Safety** | Evaluates model degradation under Gaussian noise and Missing Completely At Random (MCAR). |
-| **17** | `ml_audit_fairness` | **AI Safety** | Audits sub-group demographic parity, disparate impact ratios, and EEOC 4/5ths rule. |
-| **18** | `ml_export_onnx` | **Serving** | Converts Scikit-Learn and GBDT estimators to ONNX with round-trip verification. |
-| **19** | `ml_batch_predict` | **Serving** | Memory-bounded chunked inference with Kaggle submission verification. |
-| **20** | `ml_pseudo_label` | **Semi-Supervised** | Extracts high-confidence pseudo-labels from unlabeled pools to expand training sets. |
-| **21** | `ml_generate_model_card` | **Governance** | Auto-synthesizes Mitchell et al. production `MODEL_CARD.md`. |
-| **22** | `ml_export_colab_notebook` | **Delivery** | Generates an 8-cell executable `.ipynb` Colab notebook. |
-| **23** | `ml_generate_dashboard` | **Visuals** | Standalone HTML dashboard with embedded SVG confusion matrices and SHAP charts. |
-| **24** | `ml_monitor_drift` | **Monitoring** | Population Stability Index (PSI) and Kolmogorov-Smirnov (KS) drift monitoring. |
-| **25** | `ml_generate_serving_bundle` | **Deployment** | Synthesizes a 3-tier FastAPI router, multi-stage `Dockerfile`, and `docker-compose.yml`. |
+| **1** | ml_ping | **Core** | Server health, Python environment, platform & CUDA GPU detection. |
+| **2** | ml_audit_dataset | **Phase 1: Hygiene** | Pre-flight audit for sentinels (-999, ?), nulls, constant features, duplicates, and class imbalance. |
+| **3** | ml_detect_target_leakage | **Phase 1: Hygiene** | Identifies target leakage, future timestamp features, and perfect predictors. |
+| **4** | ml_check_collinearity | **Phase 1: Hygiene** | Variance Inflation Factor (VIF) and pairwise correlation matrix analysis with competitive drop rule. |
+| **5** | ml_detect_label_errors | **Phase 1: Hygiene** | Detects corrupt/noisy labels via MIT Confident Learning (Northcutt et al., 2021). |
+| **6** | ml_verify_constraints | **Phase 1: Hygiene** | Validates physical limits, non-negativity, and automated Amazon Deequ 3x-IQR statistical outlier rules. |
+| **7** | ml_track_lineage | **Phase 1: Lineage** | Cryptographic artifact & dataset lineage tracking with SHA-256 digests and Git commit hashes. |
+| **8** | ml_handle_text_features | **Phase 2: Features** | Detects free-form natural language text features while filtering UUIDs and random hashes. |
+| **9** | ml_auto_clean_and_pipe | **Phase 2: Features** | Zero-leakage Scikit-Learn ColumnTransformer preprocessing pipeline with median/mode imputers and scalers. |
+| **10** | ml_balance_classes | **Phase 2: Features** | Synthetic class imbalance resampling (SMOTE, ADASYN, Random Under Sampler, Balanced Class Weights). |
+| **11** | ml_synthesize_features | **Phase 2: Features** | Generates polynomial features, mathematical ratios, and interaction terms. |
+| **12** | ml_prune_features | **Phase 2: Features** | Prunes uninformative and noisy features using Mutual Information, Lasso L1, or Permutation Importance. |
+| **13** | ml_transform_target | **Phase 2: Features** | Linearizes highly skewed continuous targets (Log1p, Box-Cox, and Yeo-Johnson transformations). |
+| **14** | ml_benchmark_models | **Phase 3: Arena** | Competitive tournament across LightGBM, XGBoost, CatBoost, Random Forest, Extra Trees, and Ridge/Logistic. |
+| **15** | ml_create_ensemble | **Phase 3: Arena** | Multi-model Stacking and Voting ensembles with out-of-fold (OOF) meta-learners. |
+| **16** | ml_tune_hyperparameters | **Phase 3: Tuning** | Optuna Bayesian optimization with pruning over hyperparameter spaces. |
+| **17** | ml_pseudo_label_loop | **Phase 3: Semi-Supervised** | Extracts high-confidence pseudo-labels from unlabeled pools to expand training sets. |
+| **18** | ml_calibrate_probabilities | **Phase 4: Safety** | Platt scaling (Sigmoid) and Isotonic Regression for true posterior probability calibration. |
+| **19** | ml_tune_threshold_and_errors | **Phase 4: Safety** | Asymmetric cost-matrix and financial loss optimization for optimal decision boundaries. |
+| **20** | ml_explain_predictions | **Phase 4: Safety** | Sub-10s TreeSHAP local attributions and global feature importance rankings. |
+| **21** | ml_detect_ood | **Phase 4: Safety** | Out-of-Distribution (OOD) anomaly detection via Mahalanobis distance & Isolation Forests. |
+| **22** | ml_stress_test_and_fairness | **Phase 4: Safety** | Evaluates model degradation under adversarial noise, missing injection, and demographic slice fairness. |
+| **23** | ml_conformal_risk_control | **Phase 4: Safety** | Rigorous finite-sample mathematical risk bounds and coverage guarantees via Split Conformal Prediction. |
+| **24** | ml_batch_predict | **Phase 5: Serving** | High-throughput chunked batch inference on massive CSV datasets. |
+| **25** | ml_export_and_document | **Phase 5: Governance** | Auto-synthesizes Mitchell et al. production MODEL_CARD.md. |
+| **26** | ml_optimize_inference | **Phase 5: Serving** | Converts Scikit-Learn / LightGBM models into ONNX runtime graph format with fp16/int8 quantization. |
+| **27** | ml_generate_eval_dashboard | **Phase 5: Visuals** | Generates standalone HTML evaluation dashboard with interactive confusion matrices and charts. |
+| **28** | ml_generate_serving_api | **Phase 5: Serving** | Scaffolds a production-ready 3-tier FastAPI serving microservice with typed Pydantic schemas. |
+| **29** | ml_generate_docker_spec | **Phase 5: Deployment** | Generates minimal, non-root, multi-stage production Dockerfile and docker-compose.yml. |
+| **30** | ml_monitor_drift | **Phase 5: Monitoring** | Population Stability Index (PSI) and Wasserstein Distance data drift monitoring. |
+| **31** | ml_generate_colab_notebook | **Phase 6: Cloud GPU** | Generates executable .ipynb Colab notebook for remote cloud execution. |
+| **32** | ml_colab_status | **Phase 6: Cloud GPU** | Checks remote Google Colab GPU health, Tesla T4 VRAM availability, and bridge connectivity. |
+| **33** | ml_colab_execute | **Phase 6: Cloud GPU** | Executes arbitrary Python and Machine Learning code directly on remote Google Colab GPU. |
+| **34** | ml_colab_upload | **Phase 6: Cloud GPU** | Uploads local CSV datasets, models, or scripts directly into Google Colab filesystem. |
+| **35** | ml_colab_download | **Phase 6: Cloud GPU** | Downloads trained models, checkpoints, or metric reports from Colab to local workspace. |
+| **36** | ml_colab_stop | **Phase 6: Cloud GPU** | Terminates remote Google Colab GPU session to release cloud compute resources. |
+| **37** | ml_cancel_job | **Phase 6: Cloud GPU** | Cancels long-running background asynchronous ML jobs. |
 
-Complete schemas, inputs, and example JSON payloads are in [docs/TOOL_REFERENCE.md](docs/TOOL_REFERENCE.md).
-
----
+Complete schemas, inputs, and example JSON payloads are in [docs/TOOL_REFERENCE.md](docs/TOOL_REFERENCE.md) and deep-dives in [docs/tools/](docs/tools/README.md).
 
 ## 🛡️ Core Defensive Invariants
 
