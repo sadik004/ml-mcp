@@ -80,69 +80,78 @@ flowchart TD
 
 ---
 
-## ৫. টুলের ভেতরের গভীর ইঞ্জিনিয়ারিং ফিচার (Internal Engine Secrets)
+## ৫. ইঞ্জিন ভেতরের আর্কিটেকচারাল রহস্য (Internal Engine Secrets)
 
-`DecisionThresholdOptimizer` ক্লাসের অভ্যন্তরীণ আর্কিটেকচারাল ফ্লো:
+`DecisionThresholdOptimizer` ইঞ্জিনের গাণিতিক ও ডিসিশন-থিওরেটিক পাইপলাইন:
 
 ```mermaid
 flowchart TD
     A["True Labels (y_true) & Probabilities (y_probas)"] --> B["1. Validate Length & Edge Cases (All 0s or All 1s Guard)"]
-    B --> C["2. Exact PR-Curve Cutoffs & Analytical Closed-Form θ* (Sheng & Ling 2014)"]
-    C --> D["3. Calculate Confusion Matrix: TP, FP, FN, TN at t"]
-    D --> E["4. Compute Precision, Recall & F-beta Score"]
-    E --> F["5. Select ArgMax(F-beta) ➔ Optimal Threshold (t*)"]
-    F --> G["6. Generate Error Forensics & ThresholdReportDTO"]
+    B --> C["2. Vectorized Exact Cutoffs from PR-Curve & Tail Quantiles"]
+    C --> D["3. Analytical Optimal Baseline θ* (Sheng & Ling 2014)"]
+    D --> E["4. Compute Confusion Matrix Forensics: TP, FP, FN, TN at each θ"]
+    E --> F["5. Dual Optimization: ArgMax(F-beta) & Min Total Financial Loss"]
+    F --> G["6. Baseline 0.50 Comparison & Cost Savings Lift Calculation"]
+    G --> H["7. Generate ThresholdReportDTO with Complete Forensics"]
 ```
 
-### প্রধান ফিচারসমূহ:
+### থিওরিটিক্যাল ভিত্তি ও আধুনিক গবেষণা (2013–2024 Foundations):
 
-#### ১. $F_\beta$ গাণিতিক অপটিমাইজেশন সমীকরণ
-$$F_\beta = (1 + \beta^2) \cdot \frac{\text{Precision} \times \text{Recall}}{(\beta^2 \times \text{Precision}) + \text{Recall}}$$
-- **$\beta = 2.0$ (High-Recall Mode):** মেডিকেল বা ফ্রড ডিটেকশনের জন্য। ইঞ্জিন থ্রেশহোল্ডকে নিচের দিকে (যেমন: $0.22$) নামিয়ে আনে, যাতে একটি ফ্রডও মিস না হয়।
-- **$\beta = 0.5$ (High-Precision Mode):** মার্কেটিং বা অটোমেটেড পেমেন্ট প্রসেসিংয়ের জন্য। ইঞ্জিন থ্রেশহোল্ডকে ওপরের দিকে (যেমন: $0.78$) ঠেলে দেয়, যাতে কোনো মিথ্যা অ্যালার্ম না বাজে।
+#### ১. Sheng & Ling (IEEE TKDE 2014) — Closed-Form Optimal Decision Baseline
+কনভেনশনাল প্র্যাকটিসে অধিকাংশ ডেটা সায়েন্টিস্ট কোনো বাছবিচার না করে ডিফল্ট ০.৫০ থ্রেশহোল্ড ব্যবহার করে। কিন্তু বাণিজ্যিক বা ক্লিনিক্যাল ক্ষেত্রে ফলস পজিটিভ এবং ফলস নেগেটিভের খরচ সমান নয়। শেং ও লিং (২০১৪) প্রমাণ করেছেন যে তাত্ত্বিক অপ্টিমাল কাটঅফ $\theta^*$ একটি ক্লোজড-ফর্ম সূত্রে নির্ধারিত হয়:
+$$\theta^* = \frac{C_{\text{FP}} - B_{\text{TN}}}{(C_{\text{FP}} - B_{\text{TN}}) + (C_{\text{FN}} - B_{\text{TP}})}$$
+- **বাস্তব উদাহরণ**: যদি ফ্রড ট্রানজাকশন মিস করার খরচ $C_{\text{FN}} = $500$ হয় এবং ইনভেস্টিগেশন খরচ $C_{\text{FP}} = $10$ হয়, তবে:
+  $$\theta^* = \frac{10}{10 + 500} = 0.0196 \quad (\approx 1.96\%)$$
+  মডেলের কনফিডেন্স মাত্র ২% হলেই অ্যালার্ট ট্রিগার করা উচিত!
 
-#### ২. এজ-কেস ও ডেটা ক্র্যাশ গার্ড
-যদি টেস্ট ডেটাতে কোনো পজিটিভ স্যাম্পল না থাকে (`total_positives == 0`) অথবা সব স্যাম্পলই পজিটিভ হয় (`total_negatives == 0`), সাধারণ স্ক্রিপ্ট `ZeroDivisionError` দিয়ে ক্র্যাশ করে। এই ইঞ্জিন নিখুঁতভাবে এজ-কেস হ্যান্ডেল করে সেফ ফলব্যাক প্রদান করে।
+#### ২. টোটাল ফাইন্যান্সিয়াল লস মিনিমাইজেশন (Business Cost-Loss Matrix)
+ইঞ্জিন শুধুমাত্র $F_\beta$ অপ্টিমাইজেশনের মধ্যে সীমাবদ্ধ থাকে না; ব্যবহারকারীর প্রদত্ত কস্ট ম্যাট্রিক্স অনুসারে মোট আর্থিক ক্ষতি সরাসরি পরিমাপ করে:
+$$\text{Total Financial Loss} = \text{FP} \times C_{\text{FP}} + \text{FN} \times C_{\text{FN}} - (\text{TP} \times B_{\text{TP}} + \text{TN} \times B_{\text{TN}})$$
+- **নেট কস্ট সেভিংস (Cost Lift)**:
+  $$\text{Cost Savings} = \text{Loss}_{\theta = 0.50} - \text{Loss}_{\theta = \theta^*}$$
 
-#### ৩. হার্ড এরর ফরেনসিক্স (`confusion_matrix`)
-অপটিমাল কাটঅফ নির্ধারণ করার সাথে সাথে ইঞ্জিন ব্যবহারকারীকে কনফিউশন ম্যাট্রিক্সের ভেতরের সত্য জানিয়ে দেয়:
-- কয়টি ফ্রড মিস হলো (`false_negative_count`)?
-- কয়টি সৎ কাস্টমারকে সন্দেহ করা হলো (`false_positive_count`)?
-- এর ফলে ডেটা সায়েন্টিস্টরা বিজনেসের সি-লেভেল এক্সিকিউটিভদের সামনে ডলারের অংকে ক্ষতির হিসাব তুলে ধরতে পারেন।
-
-#### ৪. ডিফেন্সিভ ডেটা পাইপলাইন ফলব্যাক
-ইনপুট ডেটাসেটে যদি কোনো স্ট্রিং বা ক্যাটাগরিক্যাল কলাম অথবা মিসিং ভ্যালু থাকে, টুলটি নিজে থেকেই `DefensivePipelineBuilder` ব্যবহার করে ডেটা অটো-এনকোড করে নেয়, যাতে কোনো ডেটা টাইপ এরর ছাড়াই থ্রেশহোল্ড অপটিমাইজেশন সম্পন্ন হয়।
+#### ৩. ১০০-স্টেপ লিনিয়ার গ্রিডের বদলে ভেক্টরাইজড PR-কার্ভ কাটঅফ
+গতানুগতিক `np.linspace(0.01, 0.99, 100)` চরম ইমব্যালেন্সড ডেটাসেটের সূক্ষ্ম অপ্টিমাল পয়েন্ট মিস করে। আধুনিক ইঞ্জিন `sklearn.metrics.precision_recall_curve` থেকে প্রাপ্ত সমস্ত ইউনিক থ্রেশহোল্ড, এনালাইটিকাল $\theta^*$ এবং টেইল পার্সেন্টাইল ভেক্টরাইজডভাবে পরীক্ষা করে নিখুঁত গ্লোবাল মিনিমাম নিশ্চিত করে।
 
 ---
 
-## ৬. প্রোডাকশন ব্যবহারবিধি (Usage Example via MCP)
+## ৬. ব্যবহারের প্র্যাকটিক্যাল উদাহরণ (Usage Example via MCP)
 
-### ইনপুট পেলোড:
+### ইনপুট রিকোয়েস্ট:
 ```json
 {
   "csv_path": "data/fraud_transactions.csv",
   "target_column": "is_fraud",
-  "beta": 2.0
+  "beta": 2.0,
+  "cost_fp": 10.0,
+  "cost_fn": 500.0,
+  "benefit_tp": 50.0,
+  "benefit_tn": 0.0
 }
 ```
 
-### রিটার্ন আউটপুট রেসপন্স:
+### আউটপুট রেসপন্স (ThresholdReportDTO):
 ```json
 {
-  "optimal_threshold": 0.2312,
-  "f_beta_score": 0.8942,
-  "precision": 0.8125,
-  "recall": 0.9412,
+  "optimal_threshold": 0.0215,
+  "default_threshold": 0.50,
+  "analytical_cost_threshold": 0.0196,
+  "total_cost_optimal": 1420.0,
+  "total_cost_default": 8950.0,
+  "cost_savings": 7530.0,
+  "f_beta_score": 0.9124,
+  "precision": 0.8421,
+  "recall": 0.9655,
   "confusion_matrix": {
-    "tn": 8420,
-    "fp": 140,
-    "fn": 12,
-    "tp": 192
+    "tn": 8410,
+    "fp": 150,
+    "fn": 2,
+    "tp": 56
   }
 }
 ```
 
 ---
 
-### এক লাইনে সারমর্ম:
-`ml_tune_threshold_and_errors` হলো আপনার মডেলের জন্য একটি **কাস্টম বিজনেস গিয়ারবক্স**—যা ডিফল্ট ০.৫০ এর অন্ধ নিয়ম ভেঙে আপনার বিজনেসের লাভ-ক্ষতির অঙ্ক অনুযায়ী সঠিক ডিসিশন বাউন্ডারি বসিয়ে দেয়!
+### কী আউটপুট পাওয়া গেল?
+`ml_tune_threshold_and_errors` টুলটি দেখাল যে ডিফল্ট ০.৫০ থ্রেশহোল্ডে ব্যাংকের ক্ষতি হতো $৮,৯৫০ ডলার। কিন্তু Sheng & Ling কস্ট ম্যাট্রিক্স অনুসারে কাটঅফ ০.০২-এ নামিয়ে আনার ফলে ক্ষতি কমে দাঁড়িয়েছে মাত্র $১,৪২০ ডলারে—সরাসরি **$৭,৫৩০ ডলার সেভ হয়েছে**!

@@ -76,67 +76,52 @@ flowchart TD
 
 ---
 
-## ৫. টুলের ভেতরের গভীর ইঞ্জিনিয়ারিং ফিচার (Internal Engine Secrets)
+## ৫. ইঞ্জিন ভেতরের আর্কিটেকচারাল রহস্য (Internal Engine Secrets)
 
-`TreeShapExplainer` ক্লাসের অভ্যন্তরীণ আর্কিটেকচারাল ফ্লো:
+`TreeShapExplainer` ইঞ্জিনের গ্লোবাল ইম্পরট্যান্স ও লোকাল ওয়াটারফল পাইপলাইন:
 
 ```mermaid
 flowchart TD
     A["Trained Model & Feature Matrix (X)"] --> B{"Is Tree Model?<br/>(RF, XGB, LGBM, CatBoost)"}
     B -->|Yes| C["1. shap.sample(X, 100) Background Sampler"]
-    B -->|No| D["Safe Fallback: Genuine Permutation Importance on Unseen Validation Data (Zero Fake Fallback)"]
+    B -->|No| D["Safe Fallback: Genuine Permutation Importance on Validation Split"]
     C --> E["2. TreeExplainer(model, data=background)"]
-    E --> F["3. Compute val_matrix (Positive Class Slice)"]
-    F --> G["4. Global Importance: Mean Absolute SHAP = mean(|val_matrix|)"]
-    G --> H["5. Directional Impact: Corr(Feature_Values, SHAP_Values)"]
-    H --> I["6. TreeSHAP Local Waterfall Breakdown (Lundberg Nature MI 2020) & Sub-10s Token Shield"]
+    E --> F["3. Global SHAP: Mean Absolute Impact + Directional Pearson Correlation"]
+    E --> G["4. Local Instance Waterfall: E[f(X)] Base Value + Step-by-Step phi_i"]
+    F --> H["5. Sub-10s Token Shield: Cap to Top-K Important Features"]
+    G --> H
+    H --> I["6. Output ExplainabilityReportDTO / Local Attribution Forensics"]
 ```
 
-
-
-### থিওরিটিক্যাল ভিত্তি ও আধুনিক রিসার্চ (2020 Foundations):
+### থিওরিটিক্যাল ভিত্তি ও আধুনিক গবেষণা (2020 Foundations):
 
 #### ১. Lundberg et al. (Nature Machine Intelligence 2020) — Local Waterfall & TreeSHAP
-ফিচার অ্যাট্রিবিউশনের এডিটিভিটি (Additivity/Efficiency) নীতি অনুসারে:
+ফিচার অ্যাট্রিবিউশনের এডিটিভিটি (Additivity/Efficiency) নীতি অনুসারে প্রতিটি নমুনার প্রেডিকশন এক্সপেক্টেড বেস ভ্যালু ও ফিচার কন্ট্রিবিউশনের যোগফল:
 $$f(x) = E[f(X)] + \sum_{i=1}^M \phi_i(x)$$
 `TreeShapExplainer.explain_instance()` প্রতিটি স্যাম্পলের জন্য এক্সপেক্টেড বেস ভ্যালু $E[f(X)]$ থেকে শুরু করে প্রতিটি ফিচারের প্রভাব যোগ করে ফাইনাল প্রেডিকশনের স্টেপ-বাই-স্টেপ কিউমুলেটিভ ওয়াটারফল তৈরি করে।
 
 #### ২. Zero Fake Fallback Guarantee
 আনএক্সপ্লেনেবল মডেলের ক্ষেত্রে কোনো ডামি `1.0` বা `"neutral"` ফেক ভ্যালু তৈরি করা কঠোরভাবে নিষিদ্ধ। নন-ট্রি মডেলগুলোর ক্ষেত্রে আনসিন ভ্যালিডেশন স্প্লিটে জেনুইন পারমুটেশন ইম্পরট্যান্স ক্যালকুলেট করা হয়।
 
-### প্রধান ফিচারসমূহ:
-
-#### ১. পলিনোমিয়াল টাইম TreeSHAP ($O(TLD^2)$)
-সাধারণ কার্নেল শ্যাপে প্রতিটি ফিচারের কম্বিনেশন তৈরি করতে এক্সপোনেনশিয়াল $2^{|F|}$ কম্পিউটেশন লাগে। TreeSHAP অ্যালগরিদম সরাসরি ডিসিশন ট্রির নোড কন্ডিশনাল এক্সপেক্টেশন ট্র্যাক করে মাত্র কয়েক সেকেন্ডে নিখুঁত শ্যাপলে ভ্যালু বের করে ফেলে।
-
-#### ২. ক্যাটাগরিক্যাল ক্র্যাশ-প্রুফ ব্যাকগ্রাউন্ড স্যাম্পলিং (`shap.sample`)
-সাধারণত লাইব্রেরিতে `shap.kmeans` ব্যবহার করা হয় যা ক্যাটাগরিক্যাল বা ওয়ান-হট ডেটায় ক্র্যাশ করে। এই ইঞ্জিনে পিওর `shap.sample(X, max_background_samples=100)` ব্যবহার করা হয়েছে, যা কখনো ক্র্যাশ করে না এবং মেমোরি রিকোয়ারমেন্ট ৯০% কমিয়ে দেয়।
-
-#### ৩. ডিরেকশনাল ইমপ্যাক্ট অ্যানালাইজার (`feature_directions`)
-শুধু ফিচারের মান বড় হলেই হয় না, ফিচারটি প্রেডিকশনকে বাড়াচ্ছে না কমাচ্ছে তা জানা দরকার। ইঞ্জিন প্রতিটি ফিচারের আসল মানের সাথে তার শ্যাপ ভ্যালুর পিয়ারসন কোরিলেশন হিসাব করে:
-$$\text{Direction} = \begin{cases} \text{positive}, & \text{if } \text{corr}(X_j, \phi_j) > 0 \\ \text{negative}, & \text{if } \text{corr}(X_j, \phi_j) < 0 \\ \text{neutral}, & \text{otherwise} \end{cases}$$
-উদাহরণ: `debt_to_income` বাড়লে যদি ডিফল্ট রিস্ক বাড়ে, তবে এটি `"positive"` ডিরেকশন।
-
-#### ৪. টোকেন গার্ড ফিল্টার (LLM Context Protection)
-একটি ডেটাসেটে ৫০০টি ফিচার থাকতে পারে। ৫০০টি ফিচারের শ্যাপ রিপোর্ট কোনো এলএলএম প্রম্পটে পাঠালে কনটেক্সট উইন্ডো ক্র্যাশ করবে। ইঞ্জিন স্বয়ংক্রিয়ভাবে Mean Absolute SHAP অনুযায়ী সর্ট করে শীর্ষ `top_k` (ডিফল্ট ১০টি) ড্রপডাউন পাঠায়।
-
-#### ৫. গ্রেসফুল নন-ট্রি ফলব্যাক
-যদি ইউজার ট্রি-মডেলের বদলে লজিস্টিক রিগ্রেশন বা লিনিয়ার মডেল পাস করে, ইঞ্জিন ফেইল করে না; সে স্বয়ংক্রিয়ভাবে `_fallback_explanation` সক্রিয় করে কো-ইফিশিয়েন্ট ভিত্তিক অ্যাট্রিবিউশন প্রদান করে।
+#### ৩. পলিনোমিয়াল টাইম TreeSHAP ($O(TLD^2)$)
+ক্লাসিক্যাল শ্যাপলি ভ্যালুর এক্সপোনেনশিয়াল জটিলতা ($2^{|F|}$) দূর করে ট্রি স্ট্রাকচারকে অপ্টিমাইজড অ্যালগরিদমে রূপান্তর করা হয়েছে, যা সাব-১০ সেকেন্ডের মধ্যে এক্সপ্ল্যানেশন তৈরি করতে সক্ষম।
 
 ---
 
-## ৬. প্রোডাকশন ব্যবহারবিধি (Usage Example via MCP)
+## ৬. ব্যবহারের প্র্যাকটিক্যাল উদাহরণ (Usage Example via MCP)
 
-### ইনপুট পেলোড:
+### ইনপুট রিকোয়েস্ট (Global Analysis + Local Waterfall):
 ```json
 {
   "csv_path": "data/loan_applications.csv",
   "target_column": "approved",
-  "top_k": 5
+  "top_k": 5,
+  "model_name": "lightgbm",
+  "instance_index": 42
 }
 ```
 
-### রিটার্ন আউটপুট রেসপন্স:
+### আউটপুট রেসপন্স (ExplainabilityReportDTO):
 ```json
 {
   "explainer_type": "TreeExplainer",
@@ -156,11 +141,20 @@ $$\text{Direction} = \begin{cases} \text{positive}, & \text{if } \text{corr}(X_j
   },
   "total_features": 48,
   "background_samples": 100,
-  "execution_time_seconds": 1.482
+  "execution_time_seconds": 1.482,
+  "local_explanation": {
+    "instance_index": 42,
+    "base_value": 0.521,
+    "prediction_value": 0.894,
+    "waterfall_steps": [
+      {"feature": "credit_score", "actual_value": 780, "contribution": 0.215, "cumulative_value": 0.736},
+      {"feature": "annual_income", "actual_value": 95000, "contribution": 0.158, "cumulative_value": 0.894}
+    ]
+  }
 }
 ```
 
 ---
 
-### এক লাইনে সারমর্ম:
-`ml_explain_predictions` হলো আপনার মডেলের জন্য একটি **সাব-১০ সেকেন্ড নোবেলজয়ী এক্স-রে মেশিন**—যা গেম থিওরিটিক্যাল TreeSHAP দিয়ে মডেলের প্রতিটি সিদ্ধান্তের পেছনের আসল কারণ ও দিক উন্মোচন করে আইনি ও নৈতিক সুরক্ষা নিশ্চিত করে!
+### কী আউটপুট পাওয়া গেল?
+`ml_explain_predictions` শুধুমাত্র গ্লোবালি কোন ফিচারগুলো গুরুত্বপূর্ণ তা দেখায় না, বরং ৪২ নম্বর গ্রাহকের লোন অনুমোদনের ক্ষেত্রে তার ক্রেডিট স্কোর (+০.২১৫) এবং বার্ষিক আয় (+০.১৫৮) কীভাবে বেস সম্ভাবনা ৫২.১% থেকে বাড়িয়ে ৮৯.৪%-এ উন্নীত করেছে তার নিখুঁত ওয়াটারফল ব্রেকডাউন প্রদান করে!

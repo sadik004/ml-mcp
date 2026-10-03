@@ -72,74 +72,75 @@ flowchart TD
 
 ---
 
-## ৫. টুলের ভেতরের গভীর ইঞ্জিনিয়ারিং ফিচার (Internal Engine Secrets)
+## ৫. ইঞ্জিন ভেতরের আর্কিটেকচারাল রহস্য (Internal Engine Secrets)
 
-`ProbabilityCalibrator` ক্লাসের অভ্যন্তরীণ আর্কিটেকচারাল ফ্লো:
+`ProbabilityCalibrator` ইঞ্জিনের আধুনিক মাল্টিক্লাস সিমপ্লেক্স ও কনফরমাল পাইপলাইন:
 
 ```mermaid
 flowchart TD
-    A["Raw Model + Validation Data"] --> B["1. Pre-Audit: Calculate Brier Score & Adaptive-Quantile ECE (Roelofs et al. 2022)"]
-    B --> C{"Sample Size Check"}
-    C -->|N < 1000| D["Platt Scaling (Sigmoid Logistic Fit)"]
-    C -->|N >= 1000| E["Isotonic Regression (Piecewise Step Fit)"]
-    D --> F["2. CalibratedClassifierCV with Stratified K-Fold"]
-    E --> F
-    F --> G["3. Post-Audit: Brier Lift & Reliability Verification"]
-    G --> H["Multiclass Simplex Normalization (Kull et al. 2019) & Conformal Coverage Guard (Angelopoulos 2023)"]
+    A["Raw Model + Validation Data"] --> B["1. Pre-Audit: Brier Score & Adaptive-Quantile ECE (Roelofs 2022)"]
+    B --> C{"Calibration Mode Selection"}
+    C -->|method='temperature'| D["TemperatureScaler: ArgMin Cross-Entropy over T > 0"]
+    C -->|method='sigmoid' or N < 1000| E["Platt Scaling: CalibratedClassifierCV(method='sigmoid')"]
+    C -->|method='isotonic' or N >= 1000| F["Isotonic Regression: Piecewise Step Fit"]
+    D --> G["2. Multiclass Simplex Normalization: sum(p_i) == 1.0 (Kull et al. 2019)"]
+    E --> G
+    F --> G
+    G --> H["3. Conformal Prediction Alpha Guard (Angelopoulos 2023)"]
+    H --> I["4. Post-Audit: Brier Lift & Reliability Metrics in CalibrationReportDTO"]
 ```
 
-### প্রধান ফিচারসমূহ:
+### থিওরিটিক্যাল ভিত্তি ও আধুনিক গবেষণা (2017–2023 Foundations):
 
-#### ১. প্ল্যাট স্কেলিং বনাম আইসোটোনিক রিগ্রেশন (স্মার্ট মেথড সিলেকশন)
-- **Platt Scaling (Sigmoid):**
-  $$P(Y=1 | f) = \frac{1}{1 + \exp(A \cdot f + B)}$$
-  মডেলের মার্জিনাল আউটপুট $f$-এর ওপর একটি রিজিড লজিস্টিক সিগময়েড কার্ভ ফিট করে। ছোট ডেটাসেটে এটি ওভারফিটিং প্রতিরোধ করে।
-- **Isotonic Regression:**
-  $$\min \sum (y_i - m(f_i))^2 \quad \text{subject to } m(f_i) \le m(f_j) \text{ whenever } f_i \le f_j$$
-  এটি একটি নন-প্যারামেট্রিক স্টেপ-ফাংশন ফিট করে। এটি সিগময়েডের চেয়ে অনেক বেশি ফ্লেক্সিবল, তবে ডেটা কম হলে ওভারফিট করতে পারে। তাই টুলটি $\ge ১০০০$ স্যাম্পলে স্বয়ংক্রিয়ভাবে এটিকে পছন্দ করে।
+#### ১. Roelofs et al. (NeurIPS 2022) — Adaptive-Quantile Binning ECE
+ঐতিহ্যবাহী ফিক্সড ১০-বিন ইকুয়াল-উইডথ ECE ডেটাসেটের আকারের ওপর কৃত্রিম বায়াস তৈরি করে। আধুনিক `calculate_adaptive_ece` প্রতি বিনে সমসংখ্যক স্যাম্পল (Quantile Bins) নিশ্চিত করে ট্রু মিসক্যালিব্রেশন রেট পরিমাপ করে:
+$$\text{ECE}_{\text{adaptive}} = \sum_{m=1}^M \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|$$
 
-#### ২. ব্রায়ার স্কোর ট্র্যাকার (`calculate_multiclass_brier`)
-ব্রায়ার স্কোর হলো প্রবাবিলিটির মিন স্কয়ার্ড এরর (Mean Squared Error):
-$$\text{Brier Score} = \frac{1}{N} \sum_{i=1}^{N} (p_i - y_i)^2$$
-ব্রায়ার স্কোর ০.০ হওয়া মানে নিখুঁত নির্ভুলতা। টুলটি ক্যালিব্রেশনের আগের ও পরের ব্রায়ার স্কোর তুলনা করে `brier_score_lift` হিসাব করে।
+#### ২. Kull, Perello-Nieto, Flach et al. (NeurIPS 2019) — Multiclass Simplex Projection
+আইসোটোনিক বা প্ল্যাট স্কেলিং মাল্টিক্লাসে ওয়ান-ভার্সেস-রেস্ট ফর্মে চলে। এর ফলে প্রোবাবিলিটির যোগফল ১.০ না হয়ে ($\sum p_i \ne 1.0$) ভায়োলেশন ঘটে। আমাদের ইঞ্জিন সফটম্যাক্স প্রজেকশন প্রয়োগ করে গ্যারান্টি দেয় যে প্রতিটি রো-এর জন্য:
+$$\sum_{k=1}^K p_{ik} = 1.0 \quad \forall i$$
 
-#### ৩. এক্সপেক্টেড ক্যালিব্রেশন এরর (`calculate_ece`)
-কনফিডেন্স স্কোরকে ১০টি বিনে ($0.0-0.1, 0.1-0.2, \dots, 0.9-1.0$) ভাগ করে প্রতিটি বিনের প্রকৃত এক্যুরেসি এবং মডেলের কনফিডেন্সের মধ্যকার গড় পার্থক্য পরিমাপ করে:
-$$\text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|$$
-যদি $\text{ECE} \le 0.10$ হয়, তবে মডেলটি প্রোডাকশনের জন্য বিশ্বস্ত (`is_well_calibrated = True`) হিসেবে সার্টিফাইড হয়।
+#### ৩. Guo, Pleiss, Sun, & Weinberger (ICML 2017) — Temperature Scaling
+মডার্ন নিউরাল নেটওয়ার্ক ও বুস্টিং ট্রি মডেলে কনফিডেন্স ওভারফিটিং কমাতে একটি সিঙ্গেল বাউন্ডেড প্যারামিটার $T > 0$ অপ্টিমাইজ করা হয়:
+$$\hat{p}_i = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}$$
 
-#### ৪. সেফ স্কিপ ফর রিগ্রেশন টাস্ক
-যদি কোনো ইউজার ভুলবশত কোনো রিগ্রেশন ডেটাসেটে এটি চালায়, টুলটি ক্র্যাশ করে না; সে সতর্কবার্তা দিয়ে মূল মডেলকে অক্ষত অবস্থায় ফেরত পাঠায় (`status: skipped_regression_task`)।
+#### ৪. Angelopoulos & Bates (2021–2023) — Conformal Prediction Alpha Guard
+ডিস্ট্রিবিউশন-ফ্রি স্প্লিট কনফরমাল প্রেডিকশন প্রয়োগ করে নন-কনফরমিটি কোয়ান্টাইল $\hat{q} = \text{Quantile}_{1-\alpha}(1 - \hat{P}(Y_i \mid X_i))$ নির্ণয় করা হয়, যা টেস্ট স্যাম্পলের ওপর গাণিতিকভাবে $1 - \alpha$ মার্জিনাল কভারেজ প্রদান করে।
 
 ---
 
-## ৬. প্রোডাকশন ব্যবহারবিধি (Usage Example via MCP)
+## ৬. ব্যবহারের প্র্যাকটিক্যাল উদাহরণ (Usage Example via MCP)
 
-### ইনপুট পেলোড:
+### ইনপুট রিকোয়েস্ট:
 ```json
 {
   "csv_path": "data/loan_default_data.csv",
   "target_column": "is_default",
-  "method": null
+  "method": "temperature",
+  "alpha": 0.10
 }
 ```
 
-### রিটার্ন আউটপুট রেসপন্স:
+### আউটপুট রেসপন্স (CalibrationReportDTO):
 ```json
 {
-  "method": "isotonic",
+  "method": "temperature",
+  "temperature": 1.482,
   "pre_brier_score": 0.2145,
   "post_brier_score": 0.0812,
   "brier_score_lift": 0.1333,
   "is_well_calibrated": true,
-  "status": "completed",
   "pre_ece": 0.184,
   "post_ece": 0.042,
-  "ece_lift": 0.142
+  "adaptive_ece": 0.038,
+  "ece_lift": 0.142,
+  "conformal_alpha": 0.10,
+  "conformal_coverage": 0.9125,
+  "status": "completed"
 }
 ```
 
 ---
 
-### এক লাইনে সারমর্ম:
-`ml_calibrate_probabilities` হলো আপনার মডেলের জন্য একটি **ডিজিটাল ট্রুথ-সিরাম (Truth Serum)**—যা মডেলের ফাঁকা ওভার-কনফিডেন্স দূর করে প্রবাবিলিটিকে এমনভাবে সাজায় যেন ৮০% বলা মানে বাস্তবেও ৮০% ঘটে!
+### কী আউটপুট পাওয়া গেল?
+`ml_calibrate_probabilities` মডেলের অতিরিক্ত ওভারকনফিডেন্ট প্রেডিকশনকে টেম্পারেচার স্কেলিং ($T=1.482$) দিয়ে ট্রু সম্ভাবনায় নামিয়ে এনেছে। এডাপ্টিভ ECE ১৮.৪% থেকে কমে ৩.৮%-এ নেমেছে এবং কনফরমাল কভারেজ ৯১.২৫% নিশ্চিত হয়েছে!
