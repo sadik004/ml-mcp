@@ -4,6 +4,8 @@
 
 ---
 
+> **Theoretical Basis:** van der Laan et al. (2007) — "Super Learner" & Wolpert (1992) — "Stacked Generalization"
+
 ### ১. মানুষের গল্পের মতো পেছনের ইতিহাস (The Human Story / Real Industry Dilemma)
 
 > **"কোন অ্যালগরিদমটি সেরা: LightGBM, XGBoost নাকি CatBoost?"**
@@ -110,20 +112,22 @@ flowchart TD
     Level1 --> Out["Final Generalization OOF Score & Fitted Pipeline"]
 ```
 
-#### কোর ইঞ্জিন কোড লজিক:
+#### কোর ইঞ্জিন কোড লজিক (Super Learner Architecture):
 ```python
 if task_type == "classification":
-    final_estimator = LogisticRegression(C=1.0, max_iter=500)
+    # L2 regularized bounded meta-learner to prevent meta-overfitting
+    final_estimator = LogisticRegression(C=0.5, solver="lbfgs", max_iter=500)
     stacking_model = StackingClassifier(
-        estimators=base_models,      # Top-3 candidates (e.g., LightGBM, CatBoost, XGBoost)
+        estimators=base_models,
         final_estimator=final_estimator,
-        cv=cv_splits,               # 5-Fold leak-free split
-        passthrough=False,          # Prevents raw feature collinearity explosion
+        cv=cv_splits,
+        passthrough=False,
         n_jobs=1,
     )
-    val_metric = "roc_auc"
 else:
-    final_estimator = RidgeCV()
+    # Super Learner Non-Negative Least Squares (NNLS): Enforces non-negative weights (positive=True)
+    # Prevents extreme negative weights and cancellation oscillations when base models are correlated
+    final_estimator = Ridge(alpha=1.0, positive=True)
     stacking_model = StackingRegressor(
         estimators=base_models,
         final_estimator=final_estimator,
@@ -131,14 +135,13 @@ else:
         passthrough=False,
         n_jobs=1,
     )
-    val_metric = "r2"
 
-# 1. Fit stacking model on full training data
+# 1. Fit stacking model on full training data (1 pass)
 stacking_model.fit(X, y)
 
-# 2. Estimate out-of-fold generalization score safely
-scores = cross_val_score(stacking_model, X, y, cv=cv_splits, scoring=val_metric, n_jobs=1)
-oof_score = float(np.mean(scores))
+# 2. 1-Pass Out-Of-Fold (OOF) Prediction Matrix (eliminates 25x nested CV explosion)
+# Generates OOF meta-features using base models and computes leak-free OOF validation score
+oof_score = evaluate_oof_score(final_estimator, meta_features, y)
 ```
 
 1. **L2 Regularized Meta-Learner:** মেটা-লার্নার হিসেবে ডিপ নিউরাল নেটওয়ার্ক বা কমপ্লেক্স ট্রি ব্যবহার না করে `LogisticRegression` বা `RidgeCV` ব্যবহার করা হয়েছে যাতে মেটা-লেভেলে সেকেন্ডারি ওভারফিটিং সম্পূর্ণ রোধ করা যায়।

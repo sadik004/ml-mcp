@@ -58,6 +58,8 @@
 | **`target_column`** | `string` | **হ্যাঁ** | - | আপনি যে কলাম প্রেডিক্ট করতে চান (যেমন: `"price"` বা `"rating"`). |
 | **`task_type`** | `string` | না | `"classification"` | প্রেডিকশন সংখ্যা হলে `"regression"`, ক্যাটাগরি হলে `"classification"`. |
 | **`cv_splits`** | `integer` | না | `5` | কত টুকরো করে ক্রস-ভ্যালিডেশন পরীক্ষা নেওয়া হবে (ডিফল্ট ৫-ফোল্ড). |
+| **`scoring`** | `string` | না | `null` (Auto: `"roc_auc"` বা `"r2"`) | সুনির্দিষ্ট মূল্যায়ন মেট্রিক (যেমন: `"roc_auc"`, `"f1"`, `"f1_macro"`, `"accuracy"`, `"r2"`, `"neg_root_mean_squared_error"`)। `sklearn.metrics.get_scorer` দিয়ে মেট্রিক অ্যালাইনমেন্ট নিশ্চিত করে যাতে ক্লাসিফায়ার ভুলবশত সাধারণ একুরেসি মেপে মডেল র্যাংক না করে। |
+| **`group_column`** | `string` | না | `null` | গ্রুপ বা ক্লাস্টার কলামের নাম। প্রদান করা হলে `StratifiedGroupKFold` ব্যবহার করে গ্রুপ লিকেজ প্রতিরোধ করা হয়। |
 | **`fast_mode`** | `boolean` | না | `false` | খুব তাড়া থাকলে `true` দিলে দ্রুত কম ট্রিতে কুইক স্কোর এনে দেবে. |
 | **`view`** | `string` | না | `"compact"` | `"compact"` দিলে সামারি লিডারবোর্ড দেবে, আর `"detailed"` দিলে গভীরে সব মেট্রিক্স দেখাবে. |
 
@@ -88,8 +90,9 @@ flowchart TD
 4. **Overfit Gap Analysis (`overfit_gap`):** $\text{Overfit Gap} = |\text{Train Score} - \text{Validation Score}|$ দিয়ে ফাঁকিবাজ বা মুখস্থ করা মডেল শনাক্ত করে।
 5. **Inference Latency Profiling (`inference_latency_ms`):** লাইভ সার্ভারে ১টি প্রেডিকশন দিতে কত মিলি-সেকেন্ড লাগে তা পরীক্ষা করে।
 6. **Feature Importance Extraction:** কোন মডেল কোন কলামকে বেশি গুরুত্ব দিল তা এক নজরে বের করে আনে।
-7. **Autonomous Top-3 Stacking Ensemble Engine:** শীর্ষ ৩টি বিজয়ী মডেলকে নিয়ে নিজে নিজে একটি নতুন `StackingEnsemble` সুপার-মডেল বানিয়ে ফেলে!
-8. **Champion Estimator Caching:** চ্যাম্পিয়ন মডেলটিকে মেমোরিতে লক করে রাখে যাতে সরাসরি ONNX এক্সপোর্ট বা FastAPI সার্ভিংয়ে ব্যবহার করা যায়।
+7. **Diversity-Guarded Stacking Ensemble Engine (Kuncheva & Whitaker 2003):** অন্ধভাবে শীর্ষ ৩টি মডেল না নিয়ে তাদের ওওএফ প্রেডিকশনের Pearson Correlation ($r$) পরীক্ষা করা হয়। $r \ge 0.95$ (অতিরিক্ত সদৃশ/কোলিনিয়ার) মডেলগুলোকে ফিল্টার আউট করে কেবল স্বতন্ত্র ও বৈচিত্র্যময় মডেল দিয়ে `StackingEnsemble` তৈরি করা হয় এবং এর বাস্তব ফিট টাইম ও ইনফারেন্স লেটেন্সি পরিমাপ করা হয়।
+8. **Metric Alignment & Zero-Leakage State Isolation (`get_scorer` + `clone`):** প্রতিটি ফোল্ডে মডেল ফিট করার পূর্বে `clone()` করা হয় যাতে কোনো মেমরি বা ক্যাশ লিক না হয়। ক্লাসিফায়ারে `model.score()`-এর একুরেসি ফাঁদ নির্মূল করে ব্যবহারকারীর কাঙ্ক্ষিত মেট্রিক অনুযায়ী র্যাংকিং নিশ্চিত করা হয়।
+9. **Champion Estimator Caching:** চ্যাম্পিয়ন মডেলটিকে মেমোরিতে লক করে রাখে যাতে সরাসরি ONNX এক্সপোর্ট বা FastAPI সার্ভিংয়ে ব্যবহার করা যায়।
 
 ---
 
