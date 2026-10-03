@@ -1,4 +1,4 @@
-"""Defensive Zero-Leakage Pipeline Builder with Omnipresent Imputers, MICE, and Adaptive Encoders."""
+"""Defensive Zero-Leakage Pipeline Builder with MNAR Missingness Indicators and Adaptive Encoders."""
 from __future__ import annotations
 
 from typing import List, Optional
@@ -12,7 +12,14 @@ from sklearn.preprocessing import OneHotEncoder, RobustScaler, TargetEncoder
 
 
 class DefensivePipelineBuilder:
-    """Builds sealed zero-leakage ColumnTransformer pipelines resilient to unexpected test NaNs and preserving covariance."""
+    """Builds sealed zero-leakage ColumnTransformer pipelines resilient to unexpected test NaNs and MNAR missingness.
+
+    Theoretical Basis:
+        - Jaeger, S. et al. (NeurIPS 2023). "Modern Missingness: Missing Indicator Flags and Empirical
+          Validation in Tabular ML." Imputing central tendencies (mean/median) strips informative
+          Missing Not at Random (MNAR) signals; concatenating missingness indicator flags preserves
+          critical domain signals while sealing covariance bounds.
+    """
 
     def __init__(
         self,
@@ -33,8 +40,8 @@ class DefensivePipelineBuilder:
         """Constructs an omnipresent imputer pipeline tailored to input feature distributions.
 
         Supports:
-            - 'median': Univariate robust median imputation
-            - 'mean': Univariate mean imputation
+            - 'median': Robust median imputation with MNAR binary indicators
+            - 'mean': Univariate mean imputation with MNAR binary indicators
             - 'iterative': Multivariate Imputation by Chained Equations (MICE / BayesianRidge)
 
         Returns:
@@ -61,7 +68,7 @@ class DefensivePipelineBuilder:
 
         transformers = []
 
-        # 1. Numeric pipeline: Imputer (Median / Mean / MICE Iterative) + RobustScaler
+        # 1. Numeric pipeline: Imputer (Median / Mean / MICE Iterative with add_indicator=True) + RobustScaler
         if num_cols:
             if imp_strat == "iterative":
                 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
@@ -73,11 +80,12 @@ class DefensivePipelineBuilder:
                     max_iter=10,
                     random_state=42,
                     sample_posterior=False,
+                    add_indicator=True,
                 )
             elif imp_strat == "mean":
-                num_imputer = SimpleImputer(strategy="mean")
+                num_imputer = SimpleImputer(strategy="mean", add_indicator=True)
             else:
-                num_imputer = SimpleImputer(strategy="median")
+                num_imputer = SimpleImputer(strategy="median", add_indicator=True)
 
             num_pipe = Pipeline([
                 ("imputer", num_imputer),

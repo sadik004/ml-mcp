@@ -1,9 +1,8 @@
-"""Demographic Slice Fairness and Disparate Impact Auditor."""
+"""Intersectional Subgroup Fairness and Disparate Impact Auditor (Kearns et al. ICML 2018)."""
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Union
-
+from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, r2_score
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class SliceFairnessAuditor:
-    """Audits model performance across demographic subgroups to detect disparate impact and bias."""
+    """Audits model performance across demographic subgroups and intersectional combinations."""
 
     def __init__(self, min_slice_samples: int = 2) -> None:
         self.min_slice_samples = min_slice_samples
@@ -30,7 +29,6 @@ class SliceFairnessAuditor:
         elif "r2" in metric_lower:
             return float(r2_score(y_true, y_pred))
         else:
-            # Default to accuracy
             return float(accuracy_score(y_true, y_pred))
 
     def audit(
@@ -38,30 +36,45 @@ class SliceFairnessAuditor:
         model: Any,
         X_test: Any,
         y_test: Any,
-        protected_series: Union[pd.Series, np.ndarray, list],
+        protected_series: Union[pd.Series, pd.DataFrame, np.ndarray, list, Dict[str, Any]],
         protected_attribute: str = "protected_attribute",
         metric: str = "accuracy",
     ) -> SliceFairnessDTO:
-        """Execute demographic slice fairness audit and enforce US EEOC 80% rule."""
+        """Execute intersectional demographic subgroup fairness audit enforcing US EEOC 80% rule."""
         X_arr = X_test.to_numpy() if isinstance(X_test, pd.DataFrame) else np.asarray(X_test)
         y_arr = np.asarray(y_test)
-        groups = np.asarray(protected_series)
 
-        if len(X_arr) != len(groups):
-            raise ValueError(f"Length mismatch: X_test ({len(X_arr)}) and protected_series ({len(groups)})")
+        # Handle multiple protected attributes for intersectional subgroup analysis
+        if isinstance(protected_series, pd.DataFrame):
+            # Cartesian product combination: "col1_val_col2_val"
+            composite_groups = protected_series.astype(str).agg("_x_".join, axis=1).to_numpy()
+            attr_name = "+".join(protected_series.columns)
+        elif isinstance(protected_series, dict):
+            df_temp = pd.DataFrame(protected_series)
+            composite_groups = df_temp.astype(str).agg("_x_".join, axis=1).to_numpy()
+            attr_name = "+".join(df_temp.columns)
+        elif isinstance(protected_series, np.ndarray) and protected_series.ndim > 1:
+            df_temp = pd.DataFrame(protected_series)
+            composite_groups = df_temp.astype(str).agg("_x_".join, axis=1).to_numpy()
+            attr_name = protected_attribute
+        else:
+            composite_groups = np.asarray(protected_series, dtype=str)
+            attr_name = protected_attribute
+
+        if len(X_arr) != len(composite_groups):
+            raise ValueError(f"Length mismatch: X_test ({len(X_arr)}) and protected_series ({len(composite_groups)})")
 
         preds = model.predict(X_arr)
-        unique_groups = np.unique(groups)
+        unique_groups = np.unique(composite_groups)
 
         subgroup_scores: Dict[str, float] = {}
         for grp in unique_groups:
-            mask = groups == grp
+            mask = composite_groups == grp
             if np.sum(mask) >= self.min_slice_samples:
                 score = self._calculate_slice_metric(y_arr[mask], preds[mask], metric)
                 subgroup_scores[str(grp)] = round(float(score), 4)
 
         if not subgroup_scores:
-            # Fallback if no subgroups met min_samples
             overall_score = self._calculate_slice_metric(y_arr, preds, metric)
             subgroup_scores["all"] = round(float(overall_score), 4)
 
@@ -70,17 +83,16 @@ class SliceFairnessAuditor:
         max_score = max(scores_list)
         max_disparity = float(max_score - min_score)
 
-        # Disparate impact ratio: min_score / max_score (Four-Fifths 80% Rule)
+        # Disparate impact ratio: min_score / max_score
         if max_score > 1e-6:
             dir_ratio = float(min_score / max_score)
         else:
             dir_ratio = 1.0 if min_score == max_score else 0.0
 
-        # Parity violated if ratio is below 80% threshold (0.80)
         parity_violated = bool(dir_ratio < 0.80)
 
         return SliceFairnessDTO(
-            protected_attribute=protected_attribute,
+            protected_attribute=attr_name,
             subgroup_scores=subgroup_scores,
             max_disparity=round(max_disparity, 4),
             disparate_impact_ratio=round(dir_ratio, 4),

@@ -1,4 +1,4 @@
-"""Probability Calibration Engine with Platt Scaling, Isotonic, Temperature Scaling, and Adaptive ECE."""
+"""Probability Calibration Engine with Beta Calibration (Kull et al. AISTATS) and Adaptive ECE."""
 from __future__ import annotations
 
 import logging
@@ -8,8 +8,9 @@ from scipy.optimize import minimize_scalar
 from scipy.special import expit, logit, softmax
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.model_selection import cross_val_predict
 from sklearn.preprocessing import label_binarize
 
 from ml_mcp.schemas.tuning import CalibrationReportDTO
@@ -17,106 +18,73 @@ from ml_mcp.schemas.tuning import CalibrationReportDTO
 logger = logging.getLogger(__name__)
 
 
-def calculate_adaptive_ece(
-    y_true: np.ndarray,
-    probas: np.ndarray,
-    n_bins: int = 10,
-) -> float:
-    """Calculate Debiased Adaptive-Quantile Expected Calibration Error (Roelofs et al. NeurIPS 2022).
-
-    Unlike fixed uniform-width bins, quantile-based bins guarantee equal sample counts per bin,
-    eliminating severe sample-size estimation bias on highly confident or skewed datasets.
-    """
+def calculate_ece(y_true: np.ndarray, probas: np.ndarray, n_bins: int = 10) -> float:
+    """Calculate standard Expected Calibration Error (ECE) with equal-width binning."""
     y_true = np.asarray(y_true)
     probas = np.asarray(probas)
-    total_samples = len(y_true)
-    if total_samples == 0:
-        return 0.0
-
-    if probas.ndim == 1 or probas.shape[1] == 2:
-        confidences = probas[:, 1] if probas.ndim > 1 else probas
-        predictions = (confidences >= 0.5).astype(int)
-        accuracies = (predictions == y_true).astype(float)
-    else:
-        predictions = np.argmax(probas, axis=1)
+    if probas.ndim == 2:
         confidences = np.max(probas, axis=1)
-        accuracies = (predictions == y_true).astype(float)
-
-    # Compute quantile bin edges for equal sample representation
-    quantiles = np.linspace(0.0, 1.0, n_bins + 1)
-    bin_edges = np.quantile(confidences, quantiles)
-    bin_edges = np.unique(bin_edges)  # remove duplicate edges for constant values
-
-    if len(bin_edges) <= 1:
-        return float(abs(np.mean(accuracies) - np.mean(confidences)))
-
-    ece = 0.0
-    for i in range(len(bin_edges) - 1):
-        bin_lower = bin_edges[i]
-        bin_upper = bin_edges[i + 1]
-
-        if i == len(bin_edges) - 2:
-            in_bin = (confidences >= bin_lower) & (confidences <= bin_upper)
-        else:
-            in_bin = (confidences >= bin_lower) & (confidences < bin_upper)
-
-        bin_count = np.sum(in_bin)
-        if bin_count > 0:
-            bin_acc = np.mean(accuracies[in_bin])
-            bin_conf = np.mean(confidences[in_bin])
-            ece += (bin_count / total_samples) * abs(bin_acc - bin_conf)
-
-    return float(ece)
-
-
-def calculate_ece(
-    y_true: np.ndarray,
-    probas: np.ndarray,
-    n_bins: int = 10,
-) -> float:
-    """Calculate standard Expected Calibration Error (ECE) across uniform bins."""
-    y_true = np.asarray(y_true)
-    probas = np.asarray(probas)
-
-    if probas.ndim == 1 or probas.shape[1] == 2:
-        confidences = probas[:, 1] if probas.ndim > 1 else probas
-        predictions = (confidences >= 0.5).astype(int)
-        accuracies = (predictions == y_true).astype(float)
-    else:
         predictions = np.argmax(probas, axis=1)
-        confidences = np.max(probas, axis=1)
-        accuracies = (predictions == y_true).astype(float)
+    else:
+        confidences = np.where(probas >= 0.5, probas, 1.0 - probas)
+        predictions = (probas >= 0.5).astype(int)
 
+    accuracies = predictions == y_true
     bin_boundaries = np.linspace(0.0, 1.0, n_bins + 1)
     ece = 0.0
-    total_samples = len(y_true)
-
-    if total_samples == 0:
-        return 0.0
 
     for i in range(n_bins):
-        bin_lower = bin_boundaries[i]
-        bin_upper = bin_boundaries[i + 1]
-
-        if i == n_bins - 1:
-            in_bin = (confidences >= bin_lower) & (confidences <= bin_upper)
-        else:
-            in_bin = (confidences >= bin_lower) & (confidences < bin_upper)
-
-        bin_count = np.sum(in_bin)
-        if bin_count > 0:
-            bin_acc = np.mean(accuracies[in_bin])
-            bin_conf = np.mean(confidences[in_bin])
-            ece += (bin_count / total_samples) * abs(bin_acc - bin_conf)
+        bin_lower, bin_upper = bin_boundaries[i], bin_boundaries[i + 1]
+        in_bin = (confidences > bin_lower) & (confidences <= bin_upper)
+        prop_in_bin = np.mean(in_bin)
+        if prop_in_bin > 0:
+            accuracy_in_bin = np.mean(accuracies[in_bin])
+            avg_confidence_in_bin = np.mean(confidences[in_bin])
+            ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
 
     return float(ece)
+
+
+def calculate_adaptive_ece(y_true: np.ndarray, probas: np.ndarray, n_bins: int = 10) -> float:
+    """Calculate Debiased Adaptive-Quantile Expected Calibration Error (Roelofs et al. NeurIPS 2022)."""
+    y_true = np.asarray(y_true)
+    probas = np.asarray(probas)
+    if probas.ndim == 2:
+        confidences = np.max(probas, axis=1)
+        predictions = np.argmax(probas, axis=1)
+    else:
+        confidences = np.where(probas >= 0.5, probas, 1.0 - probas)
+        predictions = (probas >= 0.5).astype(int)
+
+    accuracies = predictions == y_true
+    n_samples = len(confidences)
+    if n_samples == 0:
+        return 0.0
+
+    # Equal-frequency quantile binning eliminates sample-size bias
+    percentiles = np.linspace(0, 100, n_bins + 1)
+    bin_boundaries = np.percentile(confidences, percentiles)
+    bin_boundaries[0] -= 1e-6
+    bin_boundaries[-1] += 1e-6
+
+    adaptive_ece = 0.0
+    for i in range(n_bins):
+        in_bin = (confidences > bin_boundaries[i]) & (confidences <= bin_boundaries[i + 1])
+        count = np.sum(in_bin)
+        if count > 0:
+            acc_in_bin = np.mean(accuracies[in_bin])
+            conf_in_bin = np.mean(confidences[in_bin])
+            adaptive_ece += (count / n_samples) * np.abs(conf_in_bin - acc_in_bin)
+
+    return float(adaptive_ece)
 
 
 def calculate_multiclass_brier(y_true: np.ndarray, probas: np.ndarray) -> float:
-    """Compute Brier score for binary or multiclass classification."""
+    """Calculate Brier score supporting binary and multiclass probabilities."""
+    y_true = np.asarray(y_true)
     classes = np.unique(y_true)
     if len(classes) <= 2:
-        pos_prob = probas[:, 1] if probas.ndim > 1 and probas.shape[1] == 2 else probas
+        pos_prob = probas[:, 1] if probas.ndim == 2 and probas.shape[1] == 2 else probas.flatten()
         return float(brier_score_loss(y_true, pos_prob))
 
     y_one_hot = label_binarize(y_true, classes=classes)
@@ -124,20 +92,71 @@ def calculate_multiclass_brier(y_true: np.ndarray, probas: np.ndarray) -> float:
 
 
 def enforce_simplex_normalization(probas: np.ndarray) -> np.ndarray:
-    """Enforces sum-to-one simplex probability constraint (sum_i p_i = 1.0) without negative values.
-
-    Theoretical Basis: Kull et al. (NeurIPS 2019) Dirichlet Multiclass Calibration.
-    """
+    """Enforces sum-to-one simplex probability constraint without negative values."""
     p = np.maximum(0.0, np.asarray(probas, dtype=float))
     if p.ndim == 1:
         return p
     if p.shape[1] == 1:
         return p
-    # Clip any NaN or inf
     p = np.nan_to_num(p, nan=1.0 / p.shape[1], posinf=1.0, neginf=0.0)
     row_sums = np.sum(p, axis=1, keepdims=True)
     row_sums[row_sums == 0] = 1.0
     return p / row_sums
+
+
+class BetaCalibrator(BaseEstimator, ClassifierMixin):
+    """Beta Calibration for asymmetric tabular confidence calibration (Kull et al. AISTATS / EJS).
+    
+    Formula:
+        p_cal = 1 / (1 + 1/exp(c) * (1-p)^b / p^a)
+    Equivalent to Logistic Regression on [ln(p), -ln(1-p)].
+    """
+
+    def __init__(self, base_estimator: Any = None) -> None:
+        self.base_estimator = base_estimator
+        self.lr_ = None
+        self.eps_ = 1e-7
+
+    def _extract_features(self, p: np.ndarray) -> np.ndarray:
+        p = np.clip(p, self.eps_, 1.0 - self.eps_)
+        x1 = np.log(p)
+        x2 = -np.log(1.0 - p)
+        return np.column_stack([x1, x2])
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "BetaCalibrator":
+        if self.base_estimator is not None:
+            raw_probs = self.base_estimator.predict_proba(X)
+        else:
+            raw_probs = X
+
+        if raw_probs.ndim == 2 and raw_probs.shape[1] == 2:
+            p = raw_probs[:, 1]
+        else:
+            p = raw_probs.flatten()
+
+        feats = self._extract_features(p)
+        self.lr_ = LogisticRegression(solver="lbfgs", max_iter=1000)
+        self.lr_.fit(feats, y)
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        if self.base_estimator is not None:
+            raw_probs = self.base_estimator.predict_proba(X)
+        else:
+            raw_probs = X
+
+        if raw_probs.ndim == 2 and raw_probs.shape[1] == 2:
+            p = raw_probs[:, 1]
+        else:
+            p = raw_probs.flatten()
+
+        feats = self._extract_features(p)
+        cal_probs = self.lr_.predict_proba(feats)
+        return cal_probs
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        probs = self.predict_proba(X)
+        return np.argmax(probs, axis=1)
 
 
 class TemperatureScaler(BaseEstimator, ClassifierMixin):
@@ -148,11 +167,10 @@ class TemperatureScaler(BaseEstimator, ClassifierMixin):
         self.temperature = temperature
         self.temperature_ = temperature
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> TemperatureScaler:
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "TemperatureScaler":
         raw_probs = self.base_estimator.predict_proba(X)
         y_arr = np.asarray(y)
 
-        # Convert probabilities to logits safely
         eps = 1e-12
         clipped = np.clip(raw_probs, eps, 1.0 - eps)
 
@@ -205,7 +223,7 @@ class TemperatureScaler(BaseEstimator, ClassifierMixin):
 
 
 class ProbabilityCalibrator:
-    """Probability Calibrator managing Platt, Isotonic, Temperature Scaling, and Conformal Alpha Guards."""
+    """Probability Calibrator managing Beta, Platt, Isotonic, and Temperature Scaling."""
 
     def __init__(self, random_state: int = 42) -> None:
         self.random_state = random_state
@@ -237,14 +255,14 @@ class ProbabilityCalibrator:
         y_arr = np.asarray(y)
 
         if method is None:
-            method = "sigmoid" if len(X_arr) < 1000 else "isotonic"
+            method = "beta" if len(X_arr) < 2000 else "isotonic"
 
         n_classes = len(np.unique(y_arr))
         effective_cv = min(cv, len(X_arr) // n_classes)
         if effective_cv < 2:
             effective_cv = 2
 
-        # 1. Compute Pre-Calibration Out-Of-Fold probabilities
+        # 1. Pre-calibration probabilities
         try:
             pre_probas = cross_val_predict(
                 clone(model),
@@ -262,9 +280,14 @@ class ProbabilityCalibrator:
         pre_brier = calculate_multiclass_brier(y_arr, pre_probas)
         pre_ece = calculate_ece(y_arr, pre_probas, n_bins=10)
 
-        # 2. Fit Calibrated Classifier
+        # 2. Fit Calibrator
         temp_val: Optional[float] = None
-        if method == "temperature":
+        if method == "beta":
+            base_fit = clone(model).fit(X_arr, y_arr)
+            beta_cal = BetaCalibrator(base_estimator=base_fit)
+            beta_cal.fit(X_arr, y_arr)
+            calibrated_model = beta_cal
+        elif method == "temperature":
             base_fit = clone(model).fit(X_arr, y_arr)
             temp_scaler = TemperatureScaler(base_estimator=base_fit)
             temp_scaler.fit(X_arr, y_arr)
@@ -273,12 +296,12 @@ class ProbabilityCalibrator:
         else:
             calibrated_model = CalibratedClassifierCV(
                 estimator=clone(model),
-                method=method,
+                method="sigmoid" if method == "sigmoid" else "isotonic",
                 cv=effective_cv,
             )
             calibrated_model.fit(X_arr, y_arr)
 
-        # 3. Compute Post-Calibration metrics with Simplex Normalization
+        # 3. Post-calibration metrics
         try:
             post_probas = cross_val_predict(
                 calibrated_model,
@@ -292,7 +315,6 @@ class ProbabilityCalibrator:
             post_probas = calibrated_model.predict_proba(X_arr)
 
         post_probas = enforce_simplex_normalization(post_probas)
-
         post_brier = calculate_multiclass_brier(y_arr, post_probas)
         post_ece = calculate_ece(y_arr, post_probas, n_bins=10)
         adaptive_ece = calculate_adaptive_ece(y_arr, post_probas, n_bins=10)
@@ -301,12 +323,10 @@ class ProbabilityCalibrator:
         ece_lift = pre_ece - post_ece
         is_well_calibrated = bool(post_brier <= 0.15 or post_ece <= 0.10)
 
-        # 4. Conformal Prediction Alpha Guard (Angelopoulos & Bates 2023)
-        # Compute non-conformity scores s_i = 1 - p(y_i)
+        # 4. Conformal Non-Conformity coverage
         if post_probas.ndim == 1 or post_probas.shape[1] == 2:
             prob_y = np.where(y_arr == 1, post_probas[:, 1], post_probas[:, 0])
         else:
-            classes = np.unique(y_arr)
             prob_y = post_probas[np.arange(len(y_arr)), y_arr]
 
         non_conformity = 1.0 - prob_y

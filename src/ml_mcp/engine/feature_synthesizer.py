@@ -1,4 +1,4 @@
-"""Feature synthesis module with cyclical, ratio, and CatBoost/ExploreKit empirical Bayes aggregations."""
+"""Feature synthesis module with cyclical, ratio, OpenFE cross-numeric, and CatBoost/ExploreKit aggregations."""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -56,6 +56,87 @@ class RatioFeatureTransformer(BaseEstimator, TransformerMixin):
                 ratio_val = num_series / safe_denom
                 ratio_val = np.nan_to_num(ratio_val, nan=0.0, posinf=1e6, neginf=-1e6)
                 X_out[target_name] = ratio_val
+
+        return X_out
+
+
+class CrossNumericTransformer(BaseEstimator, TransformerMixin):
+    """Pairwise cross-numeric generator for top-variance features (Zhang et al. ICML 2023; Grinsztajn et al. NeurIPS 2022).
+
+    Generates:
+        1. Safe Ratio: A / (B + eps)
+        2. Linear Difference: A - B
+    Restricts candidate pairs to the top K highest-variance numerical columns (max 5 pairs)
+    to prevent O(P^2) combinatorial explosion.
+    """
+
+    def __init__(
+        self,
+        top_k: int = 4,
+        max_pairs: int = 5,
+        epsilon: float = 1e-6,
+    ) -> None:
+        self.top_k = top_k
+        self.max_pairs = max_pairs
+        self.epsilon = epsilon
+        self.selected_pairs_: List[Tuple[str, str]] = []
+
+    def fit(self, X: pd.DataFrame, y: Any = None) -> "CrossNumericTransformer":
+        self.selected_pairs_ = []
+        if not isinstance(X, pd.DataFrame):
+            return self
+
+        # 1. Identify valid numerical features
+        num_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
+        if len(num_cols) < 2:
+            return self
+
+        # 2. Compute sample variances to select top_k most informative candidate features
+        variances = {}
+        for c in num_cols:
+            var = float(X[c].var(ddof=0))
+            if not np.isnan(var) and var > 0:
+                variances[c] = var
+
+        if len(variances) < 2:
+            return self
+
+        # Sort descending by variance
+        sorted_cols = sorted(variances.keys(), key=lambda c: variances[c], reverse=True)[:self.top_k]
+
+        # 3. Generate candidate pairs bounded by max_pairs
+        pairs: List[Tuple[str, str]] = []
+        for i in range(len(sorted_cols)):
+            for j in range(i + 1, len(sorted_cols)):
+                pairs.append((sorted_cols[i], sorted_cols[j]))
+                if len(pairs) >= self.max_pairs:
+                    break
+            if len(pairs) >= self.max_pairs:
+                break
+
+        self.selected_pairs_ = pairs
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        X_out = X.copy()
+        for col_a, col_b in self.selected_pairs_:
+            if col_a in X_out.columns and col_b in X_out.columns:
+                s_a = pd.to_numeric(X_out[col_a], errors="coerce").fillna(0.0)
+                s_b = pd.to_numeric(X_out[col_b], errors="coerce").fillna(0.0)
+
+                # Linear Difference: A - B
+                diff_col = f"{col_a}_sub_{col_b}"
+                X_out[diff_col] = s_a - s_b
+
+                # Safe Ratio: A / (B + eps) with zero/sign protection
+                safe_b = np.where(
+                    np.abs(s_b) < self.epsilon,
+                    np.sign(s_b) * self.epsilon + (s_b == 0) * self.epsilon,
+                    s_b,
+                )
+                ratio_col = f"{col_a}_ratio_{col_b}"
+                ratio_val = s_a / safe_b
+                X_out[ratio_col] = np.nan_to_num(ratio_val, nan=0.0, posinf=1e6, neginf=-1e6)
 
         return X_out
 

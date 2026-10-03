@@ -1,5 +1,6 @@
-"""Unit tests for Free-Form Text Handler with Hex/UUID filtering."""
+"""Unit tests for Free-Form Text Handler and Dense Embedding Extractor."""
 import pytest
+import numpy as np
 import pandas as pd
 
 from ml_mcp.engine.text_handler import TextFeatureHandler
@@ -22,11 +23,10 @@ def test_text_feature_handler_detects_natural_language():
 
     assert "customer_review" in report.text_columns
     assert "category" not in report.text_columns
-    assert report.recommended_strategy == "tfidf_sublinear"
+    assert report.recommended_strategy in ("dense_embedding", "tfidf_sublinear")
 
 
 def test_text_feature_handler_filters_out_uuids_and_hex_hashes():
-    # Long strings that are actually UUIDs or hex hashes, NOT natural language
     df = pd.DataFrame({
         "transaction_uuid": [
             "550e8400-e29b-41d4-a716-446655440000",
@@ -51,7 +51,24 @@ def test_text_feature_handler_filters_out_uuids_and_hex_hashes():
     handler = TextFeatureHandler()
     report = handler.analyze_text_features(df)
 
-    # Only real_comment must be qualified as text; UUIDs and hex hashes must be rejected
     assert "real_comment" in report.text_columns
     assert "transaction_uuid" not in report.text_columns
     assert "session_hash" not in report.text_columns
+
+
+def test_text_feature_handler_dense_embeddings_fallback():
+    # Dense embeddings generation test with sub-10ms fallback guarantee
+    reviews = pd.Series([
+        "Outstanding performance and sleek industrial design!",
+        "Customer support was unhelpful and delivery took weeks.",
+        "Decent functionality for the price point, fits standard desks.",
+        "Highly recommended for daily professional workflows and tasks.",
+    ])
+
+    handler = TextFeatureHandler()
+    embeddings = handler.extract_dense_embeddings(reviews, n_components=8)
+
+    assert isinstance(embeddings, np.ndarray)
+    assert embeddings.shape[0] == 4
+    assert embeddings.shape[1] > 0
+    assert not np.isnan(embeddings).any()

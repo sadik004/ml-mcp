@@ -29,22 +29,27 @@ class BatchPredictDTO(BaseDTO):
 
 
 class DataDriftReportDTO(BaseDTO):
-    """Population Stability Index (PSI) and Kolmogorov-Smirnov drift detection report."""
+    """Population Stability Index (PSI), Wasserstein-1 Distance, and Kolmogorov-Smirnov drift detection report."""
 
     psi_score: float = Field(ge=0.0, description="Overall Population Stability Index")
     drift_status: str = Field(description="no_drift (PSI<0.1), moderate_drift, severe_drift (PSI>0.25)")
     ks_p_value: float = Field(ge=0.0, le=1.0, description="Minimum KS-test p-value across numerical features")
     retraining_recommended: bool = Field(description="True if severe drift detected")
-    drifted_features: List[str] = Field(default_factory=list, description="List of columns with high PSI")
+    drifted_features: List[str] = Field(default_factory=list, description="List of columns with high PSI/Wasserstein")
+    wasserstein_distance: Optional[float] = Field(default=None, ge=0.0, description="Average normalized Wasserstein-1 distance")
+    wasserstein_p_value: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Permutation test p-value")
 
     def to_compact(self) -> Dict[str, Any]:
-        return {
+        res = {
             "psi_score": round(self.psi_score, 4),
             "drift_status": self.drift_status,
             "ks_p_value": round(self.ks_p_value, 4),
             "retraining_recommended": self.retraining_recommended,
             "drifted_features": self.drifted_features,
         }
+        if self.wasserstein_distance is not None:
+            res["wasserstein_distance"] = round(self.wasserstein_distance, 4)
+        return res
 
 
 class ModelExportDTO(BaseDTO):

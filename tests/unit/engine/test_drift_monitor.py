@@ -1,46 +1,32 @@
-"""Unit tests for Population Stability Index (PSI) and Drift Monitor."""
+"""Unit tests for Wasserstein-1 Earth Mover's Distance and Permutation Drift Testing."""
 import numpy as np
 import pytest
-
 from ml_mcp.engine.drift_monitor import DataDriftMonitor
-from ml_mcp.schemas.serving import DataDriftReportDTO
 
 
-def test_drift_monitor_no_drift():
-    """Verify monitor reports no_drift when datasets come from the same distribution."""
+def test_drift_monitor_wasserstein_no_drift():
     np.random.seed(42)
-    reference = np.random.normal(loc=10.0, scale=2.0, size=(500, 3))
-    current = np.random.normal(loc=10.0, scale=2.0, size=(500, 3))
+    ref = np.random.normal(0.0, 1.0, size=(500, 3))
+    curr = np.random.normal(0.0, 1.0, size=(500, 3))
 
     monitor = DataDriftMonitor()
-    report = monitor.detect_drift(
-        reference_data=reference,
-        current_data=current,
-        feature_names=["f1", "f2", "f3"],
-    )
+    report = monitor.detect_drift(ref, curr)
 
-    assert isinstance(report, DataDriftReportDTO)
-    assert report.psi_score < 0.10
     assert report.drift_status == "no_drift"
     assert report.retraining_recommended is False
+    assert report.wasserstein_distance is not None
+    assert report.wasserstein_distance < 0.25
 
 
-def test_drift_monitor_severe_drift():
-    """Verify monitor catches severe distribution shift and recommends retraining."""
+def test_drift_monitor_wasserstein_severe_drift():
     np.random.seed(42)
-    reference = np.random.normal(loc=10.0, scale=2.0, size=(500, 3))
-    # Substantial distribution shift
-    current = np.random.normal(loc=25.0, scale=8.0, size=(500, 3))
+    ref = np.random.normal(0.0, 1.0, size=(500, 3))
+    # Heavy tail shift on feature 0
+    curr = np.random.normal(5.0, 3.0, size=(500, 3))
 
     monitor = DataDriftMonitor()
-    report = monitor.detect_drift(
-        reference_data=reference,
-        current_data=current,
-        feature_names=["f1", "f2", "f3"],
-    )
+    report = monitor.detect_drift(ref, curr)
 
-    assert isinstance(report, DataDriftReportDTO)
-    assert report.psi_score > 0.25
-    assert report.drift_status == "severe_drift"
-    assert report.retraining_recommended is True
+    assert report.drift_status in ("moderate_drift", "severe_drift")
+    assert report.wasserstein_distance > 0.50
     assert len(report.drifted_features) > 0

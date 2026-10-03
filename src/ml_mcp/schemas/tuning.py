@@ -1,7 +1,7 @@
 """Hyperparameter Tuning, Probability Calibration, and Decision Threshold DTOs."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from pydantic import Field
 from ml_mcp.schemas.base import BaseDTO
 
@@ -30,9 +30,9 @@ class OptunaStudyDTO(BaseDTO):
 
 
 class CalibrationReportDTO(BaseDTO):
-    """Report measuring probability calibration improvement (Platt / Isotonic / Temperature)."""
+    """Report measuring probability calibration improvement (Beta / Platt / Isotonic / Temperature)."""
 
-    method: str = Field(description="sigmoid (Platt Scaling), isotonic, or temperature")
+    method: str = Field(description="beta (Beta Calibration), sigmoid (Platt Scaling), isotonic, or temperature")
     pre_brier_score: float = Field(default=0.0, ge=0.0, description="Brier score before calibration")
     post_brier_score: float = Field(default=0.0, ge=0.0, description="Brier score after calibration")
     brier_score_lift: float = Field(default=0.0, description="Improvement delta (positive is better)")
@@ -71,7 +71,7 @@ class CalibrationReportDTO(BaseDTO):
 
 
 class ThresholdReportDTO(BaseDTO):
-    """Decision threshold tuning, cost-loss matrix, and error forensics report."""
+    """Decision threshold tuning, Decision Curve Analysis (DCA), cost-loss matrix, and error forensics report."""
 
     default_threshold: float = Field(default=0.50, description="Default 0.50 classification boundary")
     optimal_threshold: float = Field(description="Tuned decision boundary maximizing objective")
@@ -85,6 +85,8 @@ class ThresholdReportDTO(BaseDTO):
     total_cost_default: Optional[float] = Field(default=None, description="Total financial loss at default 0.50 threshold")
     cost_savings: Optional[float] = Field(default=None, description="Financial loss saved by threshold optimization")
     analytical_cost_threshold: Optional[float] = Field(default=None, description="Sheng & Ling (2014) closed-form theoretical threshold")
+    dca_net_benefit: Optional[float] = Field(default=None, description="Net Benefit at optimal threshold (Vickers & Elkin 2006)")
+    dca_treat_all_net_benefit: Optional[float] = Field(default=None, description="Net benefit of Treat All policy")
 
     def to_compact(self) -> Dict[str, Any]:
         res: Dict[str, Any] = {
@@ -101,4 +103,6 @@ class ThresholdReportDTO(BaseDTO):
                 res["cost_savings"] = round(self.cost_savings, 2)
         if self.analytical_cost_threshold is not None:
             res["analytical_cost_threshold"] = round(self.analytical_cost_threshold, 4)
+        if self.dca_net_benefit is not None:
+            res["dca_net_benefit"] = round(self.dca_net_benefit, 4)
         return res

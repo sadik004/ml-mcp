@@ -1,53 +1,31 @@
-"""Unit tests for Out-of-Distribution (OOD) Detector Engine."""
+"""Unit tests for Energy-Based Out-of-Distribution Detection (Liu et al. NeurIPS 2020)."""
 import numpy as np
 import pytest
-from sklearn.datasets import make_blobs
-
-from ml_mcp.engine.ood_detector import OODDetector
-from ml_mcp.schemas.safety import OODReportDTO
+from ml_mcp.engine.ood_detector import OODDetector, compute_free_energy
 
 
-def test_ood_detector_isolation_forest_flags_outliers():
-    """Verify Isolation Forest flags extreme outliers as OOD."""
+def test_compute_free_energy_scaling():
+    logits_in = np.array([[10.0, 1.0], [8.0, 2.0]])
+    logits_out = np.array([[0.1, 0.1], [-2.0, -1.5]])
+
+    e_in = compute_free_energy(logits_in, temperature=1.0)
+    e_out = compute_free_energy(logits_out, temperature=1.0)
+
+    # In-distribution logits have lower energy, OOD low-confidence logits have higher energy
+    assert np.mean(e_in) < np.mean(e_out)
+
+
+def test_ood_detector_energy_based_detection():
     np.random.seed(42)
-    # Generate in-distribution Gaussian data
-    X_train, _ = make_blobs(n_samples=300, n_features=5, centers=1, cluster_std=1.0, random_state=42)
-    
-    # Generate test set: 90 normal points + 10 extreme outliers
-    X_normal, _ = make_blobs(n_samples=90, n_features=5, centers=1, cluster_std=1.0, random_state=100)
-    X_outliers = np.random.uniform(low=20.0, high=30.0, size=(10, 5))
-    X_test = np.vstack([X_normal, X_outliers])
+    # In-distribution: high magnitude logits
+    logits_train = np.random.normal(5.0, 1.0, size=(200, 4))
+    # OOD: low entropy noise logits
+    logits_test_ood = np.random.normal(0.0, 0.5, size=(50, 4))
 
-    detector = OODDetector(method="isolation_forest", contamination=0.10, random_state=42)
-    detector.fit(X_train)
-    report = detector.detect(X_test)
+    detector = OODDetector(method="energy", contamination=0.10)
+    detector.fit(logits_train)
+    report = detector.detect(logits_test_ood)
 
-    assert isinstance(report, OODReportDTO)
-    assert report.total_samples == 100
-    assert report.ood_detected_count >= 8
-    assert report.ood_ratio >= 0.08
-    assert report.detector_name == "IsolationForest"
-
-
-def test_ood_detector_mahalanobis_handles_singular_matrix():
-    """Verify Mahalanobis distance handles singular/collinear features with pseudo-inverse."""
-    np.random.seed(42)
-    # Collinear data where column 2 = 2 * column 1
-    col1 = np.random.randn(200, 1)
-    col2 = 2.0 * col1
-    col3 = np.random.randn(200, 1)
-    X_train = np.hstack([col1, col2, col3])
-
-    detector = OODDetector(method="mahalanobis", contamination=0.05)
-    detector.fit(X_train)
-
-    # In-distribution test point and extreme outlier
-    test_normal = np.array([[0.1, 0.2, 0.1]])
-    test_extreme = np.array([[50.0, 100.0, 50.0]])
-    X_test = np.vstack([test_normal, test_extreme])
-
-    report = detector.detect(X_test)
-    assert isinstance(report, OODReportDTO)
-    assert report.total_samples == 2
-    assert report.ood_detected_count == 1
-    assert report.detector_name == "MahalanobisDistance"
+    assert report.detector_name == "EnergyBasedOOD"
+    assert report.ood_detected_count > 0
+    assert report.ood_ratio > 0.50

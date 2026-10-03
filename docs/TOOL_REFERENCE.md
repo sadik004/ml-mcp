@@ -114,14 +114,13 @@ Constructs a zero-leakage, reproducible Scikit-Learn `ColumnTransformer` and pre
 - **Outputs:** Persisted pipeline.joblib, transformed sample preview, and column routing manifest.
 
 ### `ml_balance_classes`
-Rebalances imbalanced classification datasets using SMOTE, ADASYN, Random Under Sampler, or Balanced Class Weights.
+Applies cost-sensitive sample weighting (anti-SMOTE) or modern resampling algorithms (RandomUnderSampler, RandomOverSampler with shrinkage). Deprecates naive SMOTE line interpolation to preserve calibration.
+- **Theoretical Basis:** Wallace et al. (IEEE TKDE 2021); Menon et al. (ICLR 2021).
 - **Parameters:**
-  - `csv_path` (`str`, required): Path to dataset CSV.
-  - `target_column` (`str`, required): Classification target.
-  - `strategy` (`"auto" | "smote" | "undersample" | "weights"`, default: `"auto"`)
-  - `output_path` (`str`, optional): Path to save balanced dataset.
+  - `csv_path` (`str`, required): Imbalanced dataset CSV.
+  - `target_column` (`str`, required): Binary or multiclass ground truth.
+  - `strategy` (`"weights" | "undersample" | "oversample" | "cost_sensitive"`, default: `"weights"`): Balancing strategy.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
-
 ### `ml_synthesize_features`
 Generates cyclical sin/cos features, safe ratios, and ExploreKit group aggregations with empirical Bayes $m$-estimate smoothing and cardinality guardrails.
 - **Parameters:**

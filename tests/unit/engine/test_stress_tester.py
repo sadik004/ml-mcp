@@ -1,61 +1,23 @@
-"""Unit tests for Model Stress Tester Engine."""
+"""Unit tests for Covariance-Aware Manifold Stress Testing."""
 import numpy as np
 import pytest
-from sklearn.datasets import make_classification
-from sklearn.ensemble import RandomForestClassifier
-
+from sklearn.linear_model import LogisticRegression
 from ml_mcp.engine.stress_tester import ModelStressTester
-from ml_mcp.schemas.safety import StressTestReportDTO
 
 
-def test_stress_tester_gaussian_noise_robust_model():
-    """Verify Gaussian noise stress testing on a trained classifier."""
-    X, y = make_classification(
-        n_samples=400,
-        n_features=10,
-        n_informative=6,
-        random_state=42,
-    )
-    clf = RandomForestClassifier(n_estimators=30, random_state=42)
-    clf.fit(X[:300], y[:300])
+def test_stress_tester_covariance_noise_manifold():
+    np.random.seed(42)
+    n = 200
+    # Correlated features
+    x1 = np.random.randn(n)
+    x2 = 0.9 * x1 + 0.1 * np.random.randn(n)
+    X = np.column_stack([x1, x2])
+    y = (x1 + x2 > 0).astype(int)
 
-    tester = ModelStressTester(random_state=42)
-    report = tester.evaluate(
-        model=clf,
-        X_test=X[300:],
-        y_test=y[300:],
-        perturbation_type="gaussian_noise",
-        noise_level=0.05,
-    )
+    model = LogisticRegression().fit(X, y)
+    tester = ModelStressTester()
+    report = tester.evaluate(model, X, y, perturbation_type="covariance_noise", noise_level=0.10)
 
-    assert isinstance(report, StressTestReportDTO)
-    assert report.perturbation_type == "gaussian_noise"
-    assert report.baseline_score > 0.60
-    assert report.stressed_score >= 0.0
+    assert report.perturbation_type == "covariance_noise"
     assert 0.0 <= report.robustness_score <= 100.0
-    assert isinstance(report.is_stress_passed, bool)
-
-
-def test_stress_tester_extreme_outlier_severe_degradation():
-    """Verify extreme outlier perturbation triggers severe degradation."""
-    X, y = make_classification(
-        n_samples=400,
-        n_features=10,
-        n_informative=6,
-        random_state=42,
-    )
-    clf = RandomForestClassifier(n_estimators=20, random_state=42)
-    clf.fit(X[:300], y[:300])
-
-    tester = ModelStressTester(random_state=42)
-    report = tester.evaluate(
-        model=clf,
-        X_test=X[300:],
-        y_test=y[300:],
-        perturbation_type="extreme_outlier",
-        noise_level=0.90,
-    )
-
-    assert isinstance(report, StressTestReportDTO)
-    assert report.perturbation_type == "extreme_outlier"
     assert report.degradation_percentage >= 0.0

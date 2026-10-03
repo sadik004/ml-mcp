@@ -1,19 +1,16 @@
-"""Conformal Risk Control (CRC) Engine with pure NumPy/SciPy implementation.
+"""Conformal Risk Control (CRC) Engine with Mondrian Class-Conditional Coverage and RAPS.
 
-Controls arbitrary bounded loss functions:
-    E[loss(C_lambda(X), Y)] <= alpha
-
-Supports:
-1. 0-1 Misclassification Loss (Standard Conformal Prediction: E[1(Y not in C(X))] <= alpha)
-2. False Negative Rate (FNR) Control for high-risk / medical / fraud domains: E[1(1 not in C(X)) | Y=1] <= alpha
-3. Custom Bounded Asymmetric Cost Matrix / Financial Loss Control: E[Cost(C(X), Y)] <= alpha
-4. Mondrian (Class-Conditional) Conformal Risk Control
+Theoretical Basis:
+    - Romano, Y., Barber, R. F., & Candes, E. (NeurIPS 2020). "Classification with Valid and Equal
+      Coverage for Inherent Subgroups." Guarantees finite-sample coverage per individual class:
+      P(Y in C(X) | Y = k) >= 1 - alpha.
+    - Angelopoulos, A. N., et al. (ICLR 2021). "Uncertainty Sets for Image and Tabular Classifiers
+      via RAPS." Regularized Adaptive Prediction Sets penalize set cardinality to minimize variance.
 """
 from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
-
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -22,7 +19,7 @@ LossType = Literal["misclassification", "fnr", "asymmetric_cost"]
 
 
 class ConformalRiskControlEngine:
-    """Zero-dependency, pure NumPy/SciPy Conformal Risk Control engine."""
+    """Enterprise Conformal Prediction Engine featuring Mondrian Class-Conditional Coverage and RAPS."""
 
     def __init__(self, num_grid_points: int = 1001) -> None:
         self.grid = np.linspace(0.0, 1.0, num_grid_points)
@@ -31,23 +28,43 @@ class ConformalRiskControlEngine:
         self,
         probs: np.ndarray,
         lambda_val: Union[float, Dict[int, float]],
+        k_reg: int = 2,
+        lam_reg: float = 0.01,
+        use_raps: bool = False,
     ) -> List[List[int]]:
-        """Construct prediction sets for each sample given lambda threshold(s).
+        """Construct prediction sets for each sample given threshold(s).
         
-        A class k is included in C(x) if:
-            probs[i, k] >= 1.0 - lambda_val (or lambda_val[k] for Mondrian)
+        Supports standard quantile thresholding or Regularized Adaptive Prediction Sets (RAPS).
         """
         probs = np.asarray(probs, dtype=np.float64)
         n_samples, n_classes = probs.shape
         prediction_sets: List[List[int]] = []
 
         if isinstance(lambda_val, dict):
-            # Mondrian / Class-conditional thresholds
+            # Mondrian / Class-conditional thresholds: class k included if probs[i, k] >= 1 - lambda_val[k]
             for i in range(n_samples):
                 sample_set = [
                     k for k in range(n_classes)
                     if probs[i, k] >= (1.0 - lambda_val.get(k, 1.0))
                 ]
+                prediction_sets.append(sample_set)
+        elif use_raps:
+            # RAPS: sort probabilities descending, accumulate with penalty for rank > k_reg
+            cutoff = float(lambda_val)
+            for i in range(n_samples):
+                sorted_indices = np.argsort(-probs[i])
+                sorted_probs = probs[i][sorted_indices]
+                cum_probs = np.cumsum(sorted_probs)
+                
+                # Apply cardinality penalty for ranks beyond k_reg
+                ranks = np.arange(1, n_classes + 1)
+                penalties = lam_reg * np.maximum(0, ranks - k_reg)
+                reg_scores = cum_probs + penalties
+
+                # Include classes until score threshold is reached
+                included_count = int(np.searchsorted(reg_scores, cutoff, side="left")) + 1
+                included_count = min(included_count, n_classes)
+                sample_set = sorted_indices[:included_count].tolist()
                 prediction_sets.append(sample_set)
         else:
             # Global marginal threshold
@@ -65,22 +82,16 @@ class ConformalRiskControlEngine:
         loss_type: LossType = "misclassification",
         cost_matrix: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        """Compute sample-wise bounded loss in [0, B].
-        
-        Returns:
-            1D array of loss values for each sample.
-        """
+        """Compute sample-wise bounded loss in [0, B]."""
         y_true = np.asarray(y_true, dtype=int)
         n = len(y_true)
         losses = np.zeros(n, dtype=np.float64)
 
         if loss_type == "misclassification":
             for i in range(n):
-                # 0-1 loss: 1 if true class not in prediction set, 0 otherwise
                 losses[i] = 1.0 if y_true[i] not in prediction_sets[i] else 0.0
 
         elif loss_type == "fnr":
-            # False Negative Rate: penalizes if positive class (1) is omitted
             for i in range(n):
                 if y_true[i] == 1:
                     losses[i] = 1.0 if 1 not in prediction_sets[i] else 0.0
@@ -92,9 +103,8 @@ class ConformalRiskControlEngine:
                 pset = prediction_sets[i]
                 y_i = y_true[i]
                 if len(pset) == 0:
-                    losses[i] = 1.0  # Empty set penalty
+                    losses[i] = 1.0
                 elif len(pset) > 1:
-                    # Ambiguous set penalty (human escalation triage cost)
                     losses[i] = 0.2 if cost_matrix is None else float(cost_matrix[y_i, -1])
                 else:
                     pred = pset[0]
@@ -104,9 +114,7 @@ class ConformalRiskControlEngine:
                         if cost_matrix is not None:
                             losses[i] = float(cost_matrix[y_i, pred])
                         else:
-                            # Default asymmetric cost: FN (missed fraud) is 1.0, FP is 0.2
                             losses[i] = 1.0 if y_i == 1 else 0.2
-
         else:
             raise ValueError(f"Unsupported loss_type: {loss_type}")
 
@@ -120,13 +128,14 @@ class ConformalRiskControlEngine:
         target_risk: float = 0.05,
         cost_matrix: Optional[np.ndarray] = None,
         mondrian: bool = False,
+        use_raps: bool = False,
     ) -> Tuple[Union[float, Dict[int, float]], float]:
         """Calibrate lambda to strictly satisfy finite-sample risk guarantee:
             E[loss] <= alpha (target_risk)
         
-        Using CRC theorem (Angelopoulos et al. 2022):
-            R_hat_n(lambda) * n / (n + 1) + B / (n + 1) <= alpha
-            where B = max loss bound.
+        Theoretical Basis:
+            - Romano et al. (2020) Mondrian Class-Conditional Quantiles.
+            - Angelopoulos et al. (2021) RAPS.
         """
         probs_cal = np.asarray(probs_cal, dtype=np.float64)
         y_cal = np.asarray(y_cal, dtype=int)
@@ -135,14 +144,10 @@ class ConformalRiskControlEngine:
         if n == 0:
             raise ValueError("Calibration set cannot be empty.")
 
-        # Determine loss upper bound B
-        if loss_type == "asymmetric_cost" and cost_matrix is not None:
-            B = float(np.max(cost_matrix))
-        else:
-            B = 1.0
+        B = float(np.max(cost_matrix)) if (loss_type == "asymmetric_cost" and cost_matrix is not None) else 1.0
 
         if mondrian and loss_type == "misclassification":
-            # Class-conditional calibration (Mondrian CRC)
+            # Mondrian (Class-Conditional) Conformal Prediction (Romano et al. NeurIPS 2020)
             classes = np.unique(y_cal)
             per_class_lambdas: Dict[int, float] = {}
 
@@ -172,7 +177,7 @@ class ConformalRiskControlEngine:
             emp_risk = float(np.mean(self.evaluate_loss(all_psets, y_cal, loss_type)))
             return per_class_lambdas, emp_risk
 
-        # Marginal calibration
+        # Marginal calibration (with optional RAPS support)
         if loss_type == "fnr":
             pos_mask = (y_cal == 1)
             n_eff = int(np.sum(pos_mask))
@@ -187,7 +192,7 @@ class ConformalRiskControlEngine:
 
         selected_lambda = 1.0
         for lam in self.grid:
-            psets = self.get_prediction_sets(eval_probs, float(lam))
+            psets = self.get_prediction_sets(eval_probs, float(lam), use_raps=use_raps)
             l_vals = self.evaluate_loss(psets, eval_y, loss_type=loss_type, cost_matrix=cost_matrix)
             r_hat = np.mean(l_vals)
             corrected_risk = (n_eff / (n_eff + 1.0)) * r_hat + (B / (n_eff + 1.0))
@@ -196,7 +201,7 @@ class ConformalRiskControlEngine:
                 selected_lambda = float(lam)
                 break
 
-        full_psets = self.get_prediction_sets(probs_cal, selected_lambda)
+        full_psets = self.get_prediction_sets(probs_cal, selected_lambda, use_raps=use_raps)
         if loss_type == "fnr":
             empirical_risk = float(np.mean(self.evaluate_loss(full_psets, y_cal, loss_type)[y_cal == 1]))
         else:
@@ -208,14 +213,11 @@ class ConformalRiskControlEngine:
         self,
         probs: np.ndarray,
         lambda_val: Union[float, Dict[int, float]],
+        use_raps: bool = False,
     ) -> Tuple[List[List[int]], List[Dict[str, Any]]]:
-        """Generate prediction sets and identify human triage escalations.
-        
-        Returns:
-            Tuple of (prediction_sets, triage_records)
-        """
+        """Generate prediction sets and identify human triage escalations."""
         probs = np.asarray(probs, dtype=np.float64)
-        psets = self.get_prediction_sets(probs, lambda_val)
+        psets = self.get_prediction_sets(probs, lambda_val, use_raps=use_raps)
         records: List[Dict[str, Any]] = []
 
         for i, pset in enumerate(psets):

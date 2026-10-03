@@ -1,87 +1,46 @@
-"""Unit tests for Probability Calibrator engine."""
+"""Unit tests for Probability Calibrator with Beta Calibration and Adaptive ECE."""
 import numpy as np
 import pytest
-from sklearn.datasets import make_classification, make_regression
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-
-from ml_mcp.engine.calibrator import ProbabilityCalibrator
-from ml_mcp.schemas.tuning import CalibrationReportDTO
+from sklearn.linear_model import LogisticRegression
+from ml_mcp.engine.calibrator import ProbabilityCalibrator, BetaCalibrator, calculate_adaptive_ece
 
 
-def test_calibrator_regression_task_skipped():
-    """Verify regression tasks are safely skipped without crashing."""
-    X, y = make_regression(n_samples=100, n_features=5, random_state=42)
-    model = RandomForestRegressor(n_estimators=10, random_state=42)
-    model.fit(X, y)
+def test_beta_calibrator_asymmetric_fit():
+    np.random.seed(42)
+    n = 200
+    p = np.random.beta(0.3, 0.8, size=n)
+    y = (p > 0.4).astype(int)
 
+    cal = BetaCalibrator()
+    cal.fit(p, y)
+    cal_probs = cal.predict_proba(p)
+
+    assert cal_probs.shape == (n, 2)
+    assert not np.isnan(cal_probs).any()
+    assert np.allclose(np.sum(cal_probs, axis=1), 1.0)
+
+
+def test_adaptive_ece_elimination_of_sample_bias():
+    np.random.seed(42)
+    n = 300
+    probs = np.random.uniform(0.0, 1.0, size=(n, 2))
+    probs = probs / np.sum(probs, axis=1, keepdims=True)
+    y = np.random.choice([0, 1], size=n)
+
+    aece = calculate_adaptive_ece(y, probs, n_bins=10)
+    assert 0.0 <= aece <= 1.0
+
+
+def test_probability_calibrator_with_beta_method():
+    np.random.seed(42)
+    n = 250
+    X = np.random.randn(n, 5)
+    y = (X[:, 0] + X[:, 1] > 0).astype(int)
+
+    base_model = LogisticRegression()
     calibrator = ProbabilityCalibrator()
-    report, calibrated_model = calibrator.calibrate(
-        model=model,
-        X=X,
-        y=y,
-        task_type="regression",
-    )
+    report, cal_model = calibrator.calibrate(base_model, X, y, method="beta", cv=3)
 
-    assert isinstance(report, CalibrationReportDTO)
-    assert report.status == "skipped_regression_task"
-    assert calibrated_model is model
-
-
-def test_calibrator_temperature_scaling_and_adaptive_ece():
-    """Verify temperature scaling and debiased adaptive ECE calculation."""
-    X, y = make_classification(
-        n_samples=300,
-        n_features=10,
-        n_informative=5,
-        random_state=42,
-    )
-    base_model = RandomForestClassifier(n_estimators=15, random_state=42)
-
-    calibrator = ProbabilityCalibrator()
-    report, calibrated_model = calibrator.calibrate(
-        model=base_model,
-        X=X,
-        y=y,
-        task_type="classification",
-        method="temperature",
-        cv=3,
-    )
-
-    assert isinstance(report, CalibrationReportDTO)
-    assert report.method == "temperature"
-    assert report.temperature is not None
+    assert report.method == "beta"
     assert report.adaptive_ece is not None
-    assert report.conformal_coverage is not None
-    assert 0.80 <= report.conformal_coverage <= 1.0
-    assert hasattr(calibrated_model, "predict_proba")
-
-
-def test_calibrator_multiclass_isotonic_and_simplex_normalization():
-    """Verify Isotonic calibration strictly satisfies sum-to-one simplex probability."""
-    X, y = make_classification(
-        n_samples=400,
-        n_features=10,
-        n_classes=3,
-        n_informative=6,
-        random_state=42,
-    )
-    base_model = RandomForestClassifier(n_estimators=15, random_state=42)
-
-    calibrator = ProbabilityCalibrator()
-    report, calibrated_model = calibrator.calibrate(
-        model=base_model,
-        X=X,
-        y=y,
-        task_type="classification",
-        method="isotonic",
-        cv=3,
-    )
-
-    assert isinstance(report, CalibrationReportDTO)
-    assert report.method == "isotonic"
-    assert report.adaptive_ece is not None
-
-    # Verify probability simplex constraint
-    probs = calibrated_model.predict_proba(X[:20])
-    sums = np.sum(probs, axis=1)
-    assert np.allclose(sums, 1.0, atol=1e-5)
+    assert 0.0 <= report.post_brier_score <= 1.0

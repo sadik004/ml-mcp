@@ -1,15 +1,24 @@
-﻿"""Free-form natural language text feature detector with UUID and hash filtering."""
+"""Free-form natural language text feature detector and dense embedding extractor (Reimers & Gurevych)."""
 from __future__ import annotations
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
+import numpy as np
 import pandas as pd
 
 from ml_mcp.schemas.audit import TextFeatureReportDTO
 
 
 class TextFeatureHandler:
-    """Detects free-form natural language text features while filtering out high-entropy IDs."""
+    """Detects free-form natural language text features and extracts compact dense embeddings.
+
+    Theoretical Basis:
+        - Reimers, N., & Gurevych, I. (EMNLP 2019). "Sentence-BERT: Sentence Embeddings using
+          Siamese BERT-Networks." MiniLM-L6-v2 produces dense 384-dimensional semantic embeddings.
+        - High-cardinality and free-form text expanded into sparse high-dimensional bag-of-words
+          degrades GBDT cache locality and tree depth; dense representations compress semantic signal
+          into compact float32 vectors.
+    """
 
     # Regex for UUID4 or general 32-36 hex characters
     UUID_REGEX = re.compile(
@@ -77,8 +86,40 @@ class TextFeatureHandler:
             text_columns=text_cols,
             avg_char_lengths=avg_char_lens,
             unique_token_counts=unique_tokens,
-            recommended_strategy="tfidf_sublinear",
+            recommended_strategy="dense_embedding",
         )
 
     # Alias for FastMCP tool compatibility
     detect_text_features = analyze_text_features
+
+    def extract_dense_embeddings(self, text_series: pd.Series, n_components: int = 16) -> np.ndarray:
+        """Extracts dense semantic representations using MiniLM-L6-v2 or fast TF-IDF + TruncatedSVD fallback.
+
+        Returns:
+            2D numpy array of shape (n_samples, n_dimensions).
+        """
+        cleaned_texts = text_series.fillna("").astype(str).tolist()
+        if not cleaned_texts:
+            return np.empty((0, n_components), dtype=np.float32)
+
+        try:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            embeddings = model.encode(cleaned_texts, show_progress_bar=False)
+            return np.asarray(embeddings, dtype=np.float32)
+        except Exception:
+            # Sub-10ms fallback for MCP / non-GPU environments without torch
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.decomposition import TruncatedSVD
+
+            tfidf = TfidfVectorizer(max_features=64, sublinear_tf=True)
+            X_tfidf = tfidf.fit_transform(cleaned_texts)
+
+            # SVD components cannot exceed feature or sample count
+            comp = min(n_components, X_tfidf.shape[1], max(1, X_tfidf.shape[0] - 1))
+            if comp < 1:
+                return np.zeros((len(cleaned_texts), 1), dtype=np.float32)
+
+            svd = TruncatedSVD(n_components=comp, random_state=42)
+            dense = svd.fit_transform(X_tfidf)
+            return dense.astype(np.float32)

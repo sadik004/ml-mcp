@@ -53,7 +53,7 @@ From raw tabular data auditing to cross-validated model tournaments, Optuna Baye
 | Classic Agent ML Failures | `ml-mcp` Defensive Guarantees |
 |---|---|
 | **Catastrophic Target Leakage:** Scaling and imputer statistics computed across the whole dataset before splitting. | **Zero-Leakage Invariant:** All transformations fit strictly inside cross-validation training folds using `DefensivePipelineBuilder`. |
-| **Accuracy Paradox:** Naive 99% accuracy on imbalanced data by simply predicting the majority class. | **Omnipresent Class Balance Detection:** Automatic fallback to Macro-F1, ROC-AUC, or PR-AUC metrics, coupled with SMOTE/Borderline oversamplers. |
+| **Accuracy Paradox:** Naive 99% accuracy on imbalanced data by simply predicting the majority class. | **Cost-Sensitive Learning (Anti-SMOTE):** Automatic fallback to Macro-F1, ROC-AUC, or PR-AUC metrics, coupled with exact inverse-frequency sample weights ($w_i = \frac{N}{K \cdot N_{y_i}}$) and Random Resampling with Shrinkage. |
 | **Silent NaN Inferences:** Production models crash when unobserved missing values appear in future inference requests. | **Omnipresent Median/Mode Imputers:** Every pipeline retains a fallback imputer regardless of whether training data had NaNs. |
 | **Context Window Exhaustion:** Raw arrays, massive correlation grids, and thousands of predictions blow up LLM token limits. | **Token Shield Architecture:** `view="compact"` returns $\le 15$ essential metrics; `view="detailed"` provides complete distributions. |
 | **Scientific Type JSON Crashes:** NumPy floats, Pandas Series, and NaNs trigger serialization errors. | **Recursive JSON Sanitizer:** Seamlessly converts NumPy scalars, NaNs, and Datetimes up to depth 30 before serialization. |
@@ -148,7 +148,7 @@ All tools are decorated with @mcp.tool(), protected by the Token Shield, and ret
 | **7** | ml_track_lineage | **Phase 1: Lineage** | Cryptographic artifact & dataset lineage tracking with SHA-256 digests and Git commit hashes. |
 | **8** | ml_handle_text_features | **Phase 2: Features** | Detects free-form natural language text features while filtering UUIDs and random hashes. |
 | **9** | ml_auto_clean_and_pipe | **Phase 2: Features** | Zero-leakage Scikit-Learn ColumnTransformer preprocessing pipeline with median/mode imputers and scalers. |
-| **10** | ml_balance_classes | **Phase 2: Features** | Synthetic class imbalance resampling (SMOTE, ADASYN, Random Under Sampler, Balanced Class Weights). |
+| **10** | ml_balance_classes | **Phase 2: Features** | Cost-sensitive sample weighting (anti-SMOTE, Wallace et al. 2021), RandomUnderSampler, and RandomOverSampler with shrinkage. |
 | **11** | ml_synthesize_features | **Phase 2: Features** | Generates cyclical sin/cos features, safe ratios, and ExploreKit group aggregations with empirical Bayes smoothing. |
 | **12** | ml_prune_features | **Phase 2: Features** | Prunes noisy features using gradient-boosted out-of-fold (OOF) cross-validated permutation importance. |
 | **13** | ml_transform_target | **Phase 2: Features** | Linearizes highly skewed continuous targets (Log1p, Box-Cox, and Yeo-Johnson transformations). |
@@ -156,12 +156,12 @@ All tools are decorated with @mcp.tool(), protected by the Token Shield, and ret
 | **15** | ml_create_ensemble | **Phase 3: Arena** | Multi-model Stacking and Voting ensembles with out-of-fold (OOF) meta-learners. |
 | **16** | ml_tune_hyperparameters | **Phase 3: Tuning** | Optuna Bayesian optimization with pruning over hyperparameter spaces. |
 | **17** | ml_pseudo_label_loop | **Phase 3: Semi-Supervised** | Extracts high-confidence pseudo-labels from unlabeled pools to expand training sets. |
-| **18** | ml_calibrate_probabilities | **Phase 4: Safety** | Platt scaling (Sigmoid) and Isotonic Regression for true posterior probability calibration. |
-| **19** | ml_tune_threshold_and_errors | **Phase 4: Safety** | Asymmetric cost-matrix and financial loss optimization for optimal decision boundaries. |
+| **18** | ml_calibrate_probabilities | **Phase 4: Safety** | 3-Parameter Beta Calibration (Kull et al.) and Equal-Frequency Adaptive ECE (Roelofs et al. 2022) with Platt/Isotonic fallbacks. |
+| **19** | ml_tune_threshold_and_errors | **Phase 4: Safety** | Decision Curve Analysis (DCA Net Benefit, Vickers & Elkin) vs Treat All/None, with Sheng & Ling cost matrix thresholding. |
 | **20** | ml_explain_predictions | **Phase 4: Safety** | Sub-10s TreeSHAP local attributions and global feature importance rankings. |
-| **21** | ml_detect_ood | **Phase 4: Safety** | Out-of-Distribution (OOD) anomaly detection via Mahalanobis distance & Isolation Forests. |
-| **22** | ml_stress_test_and_fairness | **Phase 4: Safety** | Evaluates model degradation under adversarial noise, missing injection, and demographic slice fairness. |
-| **23** | ml_conformal_risk_control | **Phase 4: Safety** | Rigorous finite-sample mathematical risk bounds and coverage guarantees via Split Conformal Prediction. |
+| **21** | ml_detect_ood | **Phase 4: Safety** | Helmholtz Free Energy OOD scoring ($E(x) = -T \log \sum \exp(f_i/T)$, Liu et al. NeurIPS 2020) and Mahalanobis distance. |
+| **22** | ml_stress_test_and_fairness | **Phase 4: Safety** | Covariance-preserving manifold stress ($\\delta \\sim \\mathcal{N}(0, \\epsilon^2 \\Sigma)$) and intersectional subgroup fairness (Kearns et al. ICML 2018). |
+| **23** | ml_conformal_risk_control | **Phase 4: Safety** | Mondrian (Class-Conditional) Conformal Prediction ($P(Y \\in C(X) \\mid Y=k) \\ge 1-\\alpha$) and RAPS regularized prediction sets. |
 | **24** | ml_batch_predict | **Phase 5: Serving** | High-throughput chunked batch inference on massive CSV datasets. |
 | **25** | ml_export_and_document | **Phase 5: Governance** | Auto-synthesizes Mitchell et al. production MODEL_CARD.md. |
 | **26** | ml_optimize_inference | **Phase 5: Serving** | Converts Scikit-Learn / LightGBM models into ONNX runtime graph format with fp16/int8 quantization. |

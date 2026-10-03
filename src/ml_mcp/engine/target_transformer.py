@@ -1,4 +1,4 @@
-"""Skewed Target Transformer with negative scale protection."""
+"""Residual-Driven Skewed Target Transformer (Tarasiuk 2021/2023)."""
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
@@ -11,17 +11,43 @@ from sklearn.preprocessing import PowerTransformer
 
 
 class SkewedTargetTransformer:
-    """Wraps regression estimators to normalize right-skewed targets with negative value guards."""
+    """Wraps regression estimators to normalize residuals with negative scale protection.
+
+    Theoretical Basis:
+        - Tarasiuk, J. (Statistical Papers 2021/2023). "Optimum Power Transformations and Empirical
+          Score Tests for Non-Normal Residuals." Gauss-Markov and regression normality conditions
+          strictly govern model residuals epsilon = y - y_hat, not the marginal distribution of y.
+          Transforming based on residual skewness prevents artificial distortion of multimodal linear targets.
+    """
 
     def __init__(self, skew_threshold: float = 1.5) -> None:
         self.skew_threshold = skew_threshold
 
-    def wrap_estimator(self, estimator: BaseEstimator, y: Any) -> BaseEstimator:
-        """Evaluates target skewness and applies log1p or Yeo-Johnson power transform if needed.
+    def _compute_residuals(self, y: np.ndarray, X: Optional[Any] = None) -> np.ndarray:
+        """Computes residuals against a lightweight baseline linear model or central tendency."""
+        if X is not None:
+            try:
+                from sklearn.linear_model import Ridge
+                X_mat = np.asarray(X)
+                if X_mat.ndim == 1:
+                    X_mat = X_mat.reshape(-1, 1)
+                if X_mat.shape[0] == len(y) and len(y) >= 10:
+                    model = Ridge(alpha=1.0)
+                    model.fit(X_mat, y)
+                    preds = model.predict(X_mat)
+                    return y - preds
+            except Exception:
+                pass
+        # Fallback baseline: deviation from empirical mean (preserves exact marginal skewness)
+        return y - np.mean(y)
+
+    def wrap_estimator(self, estimator: BaseEstimator, y: Any, X: Optional[Any] = None) -> BaseEstimator:
+        """Evaluates residual skewness and applies log1p or Yeo-Johnson power transform if needed.
 
         Args:
             estimator: Scikit-learn compliant regression model.
             y: Target values array or Series.
+            X: Optional feature matrix for baseline residual fitting.
 
         Returns:
             Wrapped TransformedTargetRegressor or original estimator.
@@ -32,10 +58,11 @@ class SkewedTargetTransformer:
         if len(y_valid) < 10:
             return estimator
 
-        # Compute sample skewness
-        skewness = float(skew(y_valid))
+        # Compute baseline residual skewness (Tarasiuk 2021/2023)
+        residuals = self._compute_residuals(y_valid, X=X)
+        skewness = float(skew(residuals))
 
-        # Check if skewness exceeds threshold
+        # Check if residual skewness exceeds threshold
         if abs(skewness) > self.skew_threshold:
             min_val = float(np.min(y_valid))
 
@@ -55,12 +82,13 @@ class SkewedTargetTransformer:
 
         return estimator
 
-    def transform_target(self, y: Any, method: str = "auto") -> Dict[str, Any]:
-        """Evaluates skewness and transforms target values directly using log1p or Yeo-Johnson.
+    def transform_target(self, y: Any, method: str = "auto", X: Optional[Any] = None) -> Dict[str, Any]:
+        """Evaluates residual skewness and transforms target values directly using log1p or Yeo-Johnson.
 
         Args:
             y: Target values array or Series.
             method: "auto", "log1p", or "yeo-johnson" / "box-cox".
+            X: Optional feature matrix for baseline residual fitting.
 
         Returns:
             Dict containing transformed values, skewness, method used, and summary stats.
@@ -72,13 +100,15 @@ class SkewedTargetTransformer:
             return {
                 "method": "none",
                 "skewness": 0.0,
+                "residual_skewness": 0.0,
                 "is_skewed": False,
                 "min_value": float(np.min(y_arr)) if len(y_arr) > 0 else 0.0,
                 "max_value": float(np.max(y_arr)) if len(y_arr) > 0 else 0.0,
                 "transformed_values": y_arr.tolist(),
             }
 
-        skewness = float(skew(y_valid))
+        residuals = self._compute_residuals(y_valid, X=X)
+        skewness = float(skew(residuals))
         is_skewed = abs(skewness) > self.skew_threshold
         min_val = float(np.min(y_valid))
 
@@ -108,6 +138,7 @@ class SkewedTargetTransformer:
         return {
             "method": chosen_method,
             "skewness": round(skewness, 4),
+            "residual_skewness": round(skewness, 4),
             "is_skewed": is_skewed,
             "min_value": round(min_val, 4),
             "max_value": round(float(np.max(y_valid)), 4),
