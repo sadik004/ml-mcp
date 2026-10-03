@@ -1,4 +1,4 @@
-"""Unit tests for Target Leakage Detector with task-aware mutual information."""
+"""Unit tests for Target Leakage Detector with task-aware mutual information and Bias-Corrected Cramer's V."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -55,3 +55,53 @@ def test_target_leakage_regression_synthetic():
     assert report.has_critical_leakage is True
     assert "price_with_tax" in report.leaked_features
     assert "sqft" not in report.leaked_features
+
+
+def test_target_leakage_categorical_bias_corrected_cramers_v():
+    np.random.seed(42)
+    n = 250
+
+    # Categorical target: churn or retained
+    y = np.random.choice(["churned", "retained"], size=n, p=[0.3, 0.7])
+    
+    # Benign categorical predictor
+    region = np.random.choice(["north", "south", "east", "west"], size=n)
+    
+    # Critical post-event categorical leakage: status reflects target directly
+    leaked_status = []
+    for val in y:
+        if val == "churned":
+            leaked_status.append(np.random.choice(["account_terminated", "refunded"], p=[0.95, 0.05]))
+        else:
+            leaked_status.append(np.random.choice(["active_standing", "premium"], p=[0.95, 0.05]))
+
+    df = pd.DataFrame({
+        "region": region,
+        "account_closure_status": leaked_status,
+        "target": y,
+    })
+
+    detector = TargetLeakageDetector(threshold_cramers_v=0.90)
+    report = detector.detect_leakage(df, target_column="target", task_type="classification")
+
+    assert report.has_critical_leakage is True
+    assert "account_closure_status" in report.leaked_features
+    assert "region" not in report.leaked_features
+    assert report.cramers_v_scores["account_closure_status"] >= 0.85
+
+
+def test_target_leakage_speed_guard_on_large_dataset():
+    np.random.seed(42)
+    n = 3500
+
+    y = np.random.binomial(1, 0.5, size=n)
+    x1 = np.random.normal(0, 1, size=n)
+    x_leaked = y.astype(float)
+
+    df = pd.DataFrame({"x1": x1, "x_leaked": x_leaked, "y": y})
+    detector = TargetLeakageDetector(threshold_correlation=0.95)
+
+    # Subsampling guard ensures execution finishes in < 2 seconds
+    report = detector.detect_leakage(df, target_column="y", task_type="classification")
+    assert report.has_critical_leakage is True
+    assert "x_leaked" in report.leaked_features

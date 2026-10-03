@@ -1,4 +1,4 @@
-"""Unit tests for MIT Confident Learning label error detector."""
+"""Unit tests for MIT Confident Learning and Regression Residual Dispersion label error detector."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -37,6 +37,7 @@ def test_label_error_detector_identifies_corrupted_labels():
     assert report.total_samples == 200
     assert report.total_errors > 0
     assert report.error_rate > 0.0
+    assert report.task_type == "classification"
     assert "0" in report.class_thresholds
     assert "1" in report.class_thresholds
 
@@ -58,3 +59,34 @@ def test_label_error_detector_clean_dataset():
 
     # Clean dataset should have zero or near-zero errors
     assert report.total_errors <= 2
+
+
+def test_label_error_detector_regression_residual_dispersion():
+    np.random.seed(42)
+    n = 150
+
+    x = np.linspace(0, 10, n)
+    true_y = 3.0 * x + 5.0 + np.random.normal(0, 0.5, size=n)
+
+    # Inject extreme continuous label corruption into 4 samples
+    corrupted_y = true_y.copy()
+    corrupt_indices = [15, 45, 95, 135]
+    for idx in corrupt_indices:
+        corrupted_y[idx] += 30.0  # +30.0 massive residual outlier
+
+    df = pd.DataFrame({"feature_x": x, "target_price": corrupted_y})
+
+    detector = LabelErrorDetector(cv_splits=3, random_state=42)
+    report = detector.detect_label_errors(df, target_column="target_price", task_type="regression")
+
+    assert report.task_type == "regression"
+    assert report.total_errors >= len(corrupt_indices)
+    assert report.error_rate > 0.0
+
+    flagged_indices = [s.sample_index for s in report.flagged_samples]
+    for corrupt_idx in corrupt_indices:
+        assert corrupt_idx in flagged_indices
+
+    # Check confidence is normalized dispersion z-score > 3.0
+    for sample in report.flagged_samples:
+        assert sample.confidence >= 3.0

@@ -77,10 +77,12 @@ flowchart TD
 
 | প্যারামিটার | টাইপ | রিকোয়ার্ড? | ডিফল্ট | বিবরণ |
 | :--- | :---: | :---: | :---: | :--- |
-| **`csv_path`** | `string` | **হ্যাঁ** | - | যে ডেটাসেটে ফুল-বডি অডিট চলবে তার পাথ। |
-| **`target_column`** | `string` | না | `null` | আপনি যে কলাম প্রেডিক্ট করতে চান (যেমন: `"price"` বা `"rating"`). |
-| **`task_type`** | `string` | না | `"classification"` | প্রেডিকশন সংখ্যা হলে `"regression"`, ক্যাটাগরি হলে `"classification"`. |
-| **`view`** | `string` | না | `"compact"` | `"compact"` দিলে সারসংক্ষেপ দেবে, আর `"detailed"` দিলে প্রতিটা কলামের আলাদা হিস্ট্রি দেবে। |
+| প্যারামিটার | টাইপ | রিকোয়ার্ড? | ডিফল্ট | বিবরণ |
+| :--- | :---: | :---: | :---: | :--- |
+| **`csv_path`** | `string` | **হ্যাঁ** | - | যে ডেটাসেট প্রি-ফ্লাইট অডিট করতে হবে তার পাথ। |
+| **`target_column`** | `string \| null` | না | `null` | প্রেডিকশন টার্গেট কলামের নাম (প্রদত্ত হলে ইমব্যালেন্স ও স্কিউনেস অডিট করবে)। |
+| **`task_type`** | `string` | না | `"classification"` | `"classification"` অথবা `"regression"`। |
+| **`view`** | `string` | না | `"compact"` | `"compact"` বা `"detailed"` টোকেন শিল্ড ভিউ মোড। |
 
 ---
 
@@ -97,6 +99,18 @@ flowchart TD
     E --> F["5. Temporal Monotonicity Check (Time-series ordering)"]
     F --> G["6. Structured AuditReportDTO"]
 ```
+
+
+### থিওরিটিক্যাল ভিত্তি ও আধুনিক গবেষণা (NeurIPS 2023 DataPerf Standards):
+
+#### ১. Mazumder et al. (NeurIPS 2022/2023 DataPerf Track) — Entropy ID Memorization Guard
+শুধু কলামের নাম (যেমন `_id`) দেখে আইডি চিহ্নিত করা ঝুঁকিপূর্ণ। ইঞ্জিন শ্যানন এন্ট্রপি এবং ইউনিক রেশিও পরীক্ষা করে:
+$$H(X) = -\sum_{i} p_i \log_2(p_i)$$
+যদি $N \ge 50$ এবং ইউনিক রেশিও $\ge 99\%$ এর সাথে $H(X) \approx \log_2(N)$ হয়, তবে সেটিকে `id_memorization_columns` হিসেবে চিহ্নিত করে বাদ দেওয়ার নির্দেশ দেওয়া হয় যাতে মডেল মেমোরাইজেশন রোধ হয়।
+
+#### ২. Continuous Target Skewness & Split Strategy
+রিগ্রেশন টার্গেটের ক্ষেত্রে ফিশার-পিয়ারসন স্কিউনেস ($g_1$) ক্যালকুলেট করা হয়। $|g_1| > 1.5$ হলে লগ ট্রান্সফর্মেশনের সুপারিশ করা হয়। এছাড়া গ্রুপ ক্যান্ডিডেট থাকলে `group_kfold`, টাইম-সিরিজ থাকলে `time_series_split` এবং ক্লাসিফিকেশন হলে `stratified_kfold` অটো-সিলেক্ট করা হয়।
+
 
 ### প্রধান ফিচারসমূহ:
 

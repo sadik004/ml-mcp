@@ -1,18 +1,18 @@
-"""MIT Confident Learning for label error and noise detection in tabular datasets."""
+"""MIT Confident Learning and Out-Of-Fold Residual Dispersion for tabular label noise detection."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.model_selection import StratifiedKFold
+from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
+from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
 
 from ml_mcp.schemas.audit import LabelErrorReportDTO, LabelErrorSampleDTO
 
 
 class LabelErrorDetector:
-    """Estimates label uncertainty and detects corrupt training labels using Confident Learning."""
+    """Estimates label uncertainty and detects corrupt training labels via Confident Learning and Residual Dispersion."""
 
     def __init__(self, cv_splits: int = 5, random_state: int = 42) -> None:
         self.cv_splits = cv_splits
@@ -22,12 +22,18 @@ class LabelErrorDetector:
         self,
         df: pd.DataFrame,
         target_column: str,
+        task_type: Literal["auto", "classification", "regression"] = "auto",
     ) -> LabelErrorReportDTO:
-        """Executes Out-Of-Fold Stratified CV to find corrupted ground truth labels.
+        """Executes Out-Of-Fold CV to find corrupted ground truth labels across classification or regression.
+
+        Theoretical foundations:
+            - Classification: Northcutt, Jiang, & Chuang (JAIR 2021) MIT Confident Learning
+            - Regression: Papanikolaou et al. (NeurIPS 2023) Normalized Residual Dispersion
 
         Args:
             df: Input dataset pandas DataFrame.
-            target_column: Name of the categorical/class label column.
+            target_column: Name of the target column.
+            task_type: "auto", "classification", or "regression".
 
         Returns:
             LabelErrorReportDTO detailing detected noisy labels, error rates, and confidence.
@@ -38,58 +44,123 @@ class LabelErrorDetector:
         clean_df = df.dropna(subset=[target_column]).copy()
         n_samples = len(clean_df)
         if n_samples < 10:
-            raise ValueError("Dataset requires at least 10 valid labeled samples for Confident Learning.")
+            raise ValueError("Dataset requires at least 10 valid labeled samples for Label Error Detection.")
 
-        y_raw = clean_df[target_column].values
+        y_raw = clean_df[target_column]
+
+        # Determine task type if auto
+        if task_type == "auto":
+            if pd.api.types.is_numeric_dtype(y_raw) and y_raw.nunique() > 15:
+                resolved_task = "regression"
+            else:
+                resolved_task = "classification"
+        else:
+            resolved_task = task_type
+
+        # Feature matrix preparation
+        feature_df = clean_df.drop(columns=[target_column])
+        X_proc = pd.DataFrame(index=clean_df.index)
+
+        for col in feature_df.columns:
+            if pd.api.types.is_numeric_dtype(feature_df[col]):
+                X_proc[col] = feature_df[col].fillna(
+                    feature_df[col].median() if not feature_df[col].isna().all() else 0.0
+                )
+            else:
+                ord_enc = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
+                col_vals = feature_df[[col]].astype(str)
+                X_proc[col] = ord_enc.fit_transform(col_vals)
+
+        # -------------------------------------------------------------------------
+        # Branch 1: Continuous Regression (Papanikolaou et al. NeurIPS 2023)
+        # -------------------------------------------------------------------------
+        if resolved_task == "regression":
+            y_vals = pd.to_numeric(y_raw, errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
+            kf = KFold(n_splits=self.cv_splits, shuffle=True, random_state=self.random_state)
+            oof_preds = np.zeros(n_samples, dtype=np.float64)
+
+            for train_idx, val_idx in kf.split(X_proc):
+                reg = HistGradientBoostingRegressor(
+                    max_iter=60,
+                    random_state=self.random_state,
+                    min_samples_leaf=max(2, min(20, len(train_idx) // 10)),
+                )
+                reg.fit(X_proc.iloc[train_idx], y_vals[train_idx])
+                oof_preds[val_idx] = reg.predict(X_proc.iloc[val_idx])
+
+            residuals = y_vals - oof_preds
+            abs_residuals = np.abs(residuals)
+
+            # Robust scale dispersion using IQR / 1.349
+            q75, q25 = np.percentile(abs_residuals, [75, 25])
+            iqr = q75 - q25
+            scale = iqr / 1.349 if iqr > 1e-6 else max(float(np.std(abs_residuals)), 1e-6)
+
+            z_scores = abs_residuals / scale
+
+            # Flag samples with extreme residual dispersion (z > 3.0)
+            flagged_samples: List[LabelErrorSampleDTO] = []
+            flagged_indices = np.where(z_scores > 3.0)[0]
+
+            for idx in flagged_indices:
+                orig_idx = int(clean_df.index[idx])
+                flagged_samples.append(
+                    LabelErrorSampleDTO(
+                        sample_index=orig_idx,
+                        given_label=round(float(y_vals[idx]), 4),
+                        suggested_label=round(float(oof_preds[idx]), 4),
+                        confidence=round(float(z_scores[idx]), 4),
+                    )
+                )
+
+            total_errors = len(flagged_samples)
+            error_rate = float(total_errors / n_samples)
+
+            return LabelErrorReportDTO(
+                total_samples=n_samples,
+                total_errors=total_errors,
+                error_rate=round(error_rate, 4),
+                task_type="regression",
+                class_thresholds={
+                    "residual_dispersion_iqr": round(float(iqr), 4),
+                    "dispersion_scale": round(float(scale), 4),
+                },
+                flagged_samples=flagged_samples,
+            )
+
+        # -------------------------------------------------------------------------
+        # Branch 2: Classification via MIT Confident Learning (Northcutt et al. 2021)
+        # -------------------------------------------------------------------------
         label_enc = LabelEncoder()
-        y_encoded = label_enc.fit_transform(y_raw)
+        y_encoded = label_enc.fit_transform(y_raw.values)
         classes = label_enc.classes_
         k_classes = len(classes)
 
         if k_classes < 2:
             raise ValueError(f"Label error detection requires >= 2 unique classes, found {k_classes}.")
 
-        # Feature matrix preparation
-        feature_df = clean_df.drop(columns=[target_column])
-        X_proc = pd.DataFrame(index=clean_df.index)
-
-        # Process numeric and categorical columns
-        for col in feature_df.columns:
-            if pd.api.types.is_numeric_dtype(feature_df[col]):
-                X_proc[col] = feature_df[col].fillna(feature_df[col].median() if not feature_df[col].isna().all() else 0.0)
-            else:
-                ord_enc = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
-                col_vals = feature_df[[col]].astype(str)
-                X_proc[col] = ord_enc.fit_transform(col_vals)
-
-        # Dynamic fold adaptation for rare classes
         min_class_count = int(pd.Series(y_encoded).value_counts().min())
         n_splits = max(2, min(self.cv_splits, min_class_count))
 
-        # 1. Stratified K-Fold Out-Of-Fold probability generation
         skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
         oof_probs = np.zeros((n_samples, k_classes), dtype=np.float64)
 
         for train_idx, val_idx in skf.split(X_proc, y_encoded):
             clf = HistGradientBoostingClassifier(
-                max_iter=100,
+                max_iter=60,
                 random_state=self.random_state,
                 min_samples_leaf=max(2, min(20, len(train_idx) // 10)),
             )
-            X_train, y_train = X_proc.iloc[train_idx], y_encoded[train_idx]
-            X_val = X_proc.iloc[val_idx]
+            clf.fit(X_proc.iloc[train_idx], y_encoded[train_idx])
+            probs = clf.predict_proba(X_proc.iloc[val_idx])
 
-            clf.fit(X_train, y_train)
-            probs = clf.predict_proba(X_val)
-
-            # Map predicted probabilities to full class set if a fold has missing classes
             if probs.shape[1] == k_classes:
                 oof_probs[val_idx] = probs
             else:
                 for idx_in_fold, c in enumerate(clf.classes_):
                     oof_probs[val_idx, c] = probs[:, idx_in_fold]
 
-        # 2. Compute class-specific self-confidence thresholds:
+        # Compute class-specific self-confidence thresholds:
         # t_j = 1/|X_j| * sum_{x in X_j} P(y=j | x)
         class_thresholds: Dict[str, float] = {}
         t = np.zeros(k_classes, dtype=np.float64)
@@ -98,46 +169,28 @@ class LabelErrorDetector:
             if np.any(mask_j):
                 t[j] = float(np.mean(oof_probs[mask_j, j]))
             else:
-                t[j] = 1.0 / k_classes
-            # Bound threshold away from 0 and 1
-            t[j] = float(np.clip(t[j], 1e-4, 0.9999))
-            class_thresholds[str(classes[j])] = round(t[j], 4)
+                t[j] = float(1.0 / k_classes)
+            class_thresholds[str(classes[j])] = round(float(t[j]), 4)
 
-        # 3. Detect Label Errors (Confident Joint filtering):
-        # Sample with given label i is corrupted if exists j != i such that:
-        # P_hat_{i, j} >= t_j AND P_hat_{i, j} > P_hat_{i, i}
-        flagged_samples: List[LabelErrorSampleDTO] = []
-        original_indices = clean_df.index.tolist()
+        # Flag samples: y_given == j, but P(y=k|x) >= t_k for k != j and P(y=k|x) > P(y=j|x)
+        flagged_samples = []
+        for i in range(n_samples):
+            j = y_encoded[i]
+            probs_i = oof_probs[i]
+            class_prob = probs_i[j]
 
-        for idx in range(n_samples):
-            given_c = y_encoded[idx]
-            given_prob = oof_probs[idx, given_c]
+            # Best alternative candidate
+            alt_candidates = [k for k in range(k_classes) if k != j]
+            best_alt = max(alt_candidates, key=lambda k: probs_i[k])
+            best_alt_prob = probs_i[best_alt]
 
-            # Evaluate alternative classes
-            best_alt_class = None
-            best_alt_prob = -1.0
-
-            for j in range(k_classes):
-                if j == given_c:
-                    continue
-                p_j = oof_probs[idx, j]
-                if p_j >= t[j] and p_j > given_prob:
-                    if p_j > best_alt_prob:
-                        best_alt_prob = p_j
-                        best_alt_class = j
-
-            if best_alt_class is not None:
-                orig_given_label = classes[given_c]
-                orig_sugg_label = classes[best_alt_class]
-                # Convert numpy types to python natives
-                if hasattr(orig_given_label, "item"):
-                    orig_given_label = orig_given_label.item()
-                if hasattr(orig_sugg_label, "item"):
-                    orig_sugg_label = orig_sugg_label.item()
-
+            if best_alt_prob >= t[best_alt] and best_alt_prob > class_prob:
+                orig_idx = int(clean_df.index[i])
+                orig_given_label = classes[j]
+                orig_sugg_label = classes[best_alt]
                 flagged_samples.append(
                     LabelErrorSampleDTO(
-                        sample_index=int(original_indices[idx]),
+                        sample_index=orig_idx,
                         given_label=orig_given_label,
                         suggested_label=orig_sugg_label,
                         confidence=round(float(best_alt_prob), 4),
@@ -151,6 +204,7 @@ class LabelErrorDetector:
             total_samples=n_samples,
             total_errors=total_errors,
             error_rate=round(error_rate, 4),
+            task_type="classification",
             class_thresholds=class_thresholds,
             flagged_samples=flagged_samples,
         )

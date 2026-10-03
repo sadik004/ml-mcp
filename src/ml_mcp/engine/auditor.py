@@ -1,22 +1,37 @@
-"""Central Pre-Flight Data Auditor orchestrating data hygiene and metric guards."""
+"""Comprehensive dataset hygiene auditor and pre-flight health scanner."""
 from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Literal, Optional
 import numpy as np
 import pandas as pd
+from scipy.stats import skew
 
 from ml_mcp.engine.sentinel_hunter import SentinelHunter
 from ml_mcp.schemas.audit import AuditReportDTO
 
 
 class DatasetAuditor:
-    """Pre-flight statistical auditor enforcing Accuracy Paradox and Group Leakage guards."""
+    """Pre-flight statistical and integrity scan for tabular datasets."""
 
-    GROUP_ID_REGEX = re.compile(r".*(_id|id|_key|user|customer|patient|account)$", re.IGNORECASE)
+    GROUP_ID_REGEX = re.compile(
+        r".*(id|group|patient|user|store|site|unit|subject|hospital|account|device|session).*",
+        re.IGNORECASE,
+    )
 
     def __init__(self) -> None:
         self.sentinel_hunter = SentinelHunter()
+
+    @staticmethod
+    def calculate_shannon_entropy(series: pd.Series) -> float:
+        """Calculates Shannon entropy H(X) = -sum(p * log2(p)) in bits."""
+        clean_s = series.dropna()
+        if clean_s.empty:
+            return 0.0
+        counts = clean_s.value_counts(normalize=True).to_numpy(dtype=np.float64)
+        counts = counts[counts > 0.0]
+        entropy = -float(np.sum(counts * np.log2(counts)))
+        return max(0.0, entropy)
 
     def audit_dataset(
         self,
@@ -54,6 +69,7 @@ class DatasetAuditor:
 
         # 4. Target Analysis & Accuracy Paradox Guard
         class_imbalance_ratio: Optional[float] = None
+        target_skewness: Optional[float] = None
         recommended_metric = "accuracy"
 
         if target_column and target_column in df.columns:
@@ -68,10 +84,19 @@ class DatasetAuditor:
                 if majority_ratio > 0.85:
                     num_classes = len(val_counts)
                     recommended_metric = "pr_auc" if num_classes == 2 else "f1_weighted"
+                elif majority_ratio > 0.65:
+                    recommended_metric = "f1_weighted"
                 else:
                     recommended_metric = "accuracy"
-            elif task_type == "regression":
+            elif task_type == "regression" and not y.empty:
                 recommended_metric = "rmse"
+                if pd.api.types.is_numeric_dtype(y) and len(y) > 3:
+                    try:
+                        skew_val = float(skew(y.to_numpy(dtype=np.float64), nan_policy="omit"))
+                        if not np.isnan(skew_val):
+                            target_skewness = round(skew_val, 4)
+                    except Exception:
+                        pass
 
         # 5. Group Column Candidate Detection (Group Leakage Guard)
         group_candidate: Optional[str] = None
@@ -79,7 +104,6 @@ class DatasetAuditor:
             if col == target_column:
                 continue
             if self.GROUP_ID_REGEX.match(col):
-                # Verify that values repeat (entity visits)
                 unique_ratio = df[col].nunique() / row_count
                 if 0.001 < unique_ratio < 0.90:
                     group_candidate = col
@@ -89,7 +113,6 @@ class DatasetAuditor:
         has_temporal_order = False
         date_cols = df.select_dtypes(include=["datetime64", "datetimetz"]).columns.tolist()
         if not date_cols:
-            # Check string columns parseable as dates
             for col in df.select_dtypes(include=["object"]).columns:
                 if "date" in col.lower() or "time" in col.lower() or "timestamp" in col.lower():
                     try:
@@ -105,13 +128,47 @@ class DatasetAuditor:
                 has_temporal_order = True
                 break
 
-        # 7. Detailed Column Summaries
+        # 7. Entropy & High-Cardinality ID Memorization Guard (Mazumder et al. NeurIPS 2023)
+        # Prevents tree-based models from memorizing arbitrary indices, GUIDs, or row numbers
+        id_memorization_columns: List[str] = []
+        log2_n = np.log2(row_count) if row_count > 1 else 1.0
+
+        for col in df.columns:
+            if col == target_column:
+                continue
+            series = df[col].dropna()
+            n_valid = len(series)
+            if n_valid < 20:
+                continue
+
+            unique_count = series.nunique()
+            unique_ratio = unique_count / n_valid
+
+            # Exact unique identifier (100% distinct)
+            if unique_ratio >= 0.99:
+                entropy = self.calculate_shannon_entropy(series)
+                # Max possible entropy is log2(N); if entropy is near maximal (> 90%), it is an ID column
+                if entropy >= 0.90 * log2_n or unique_ratio == 1.0:
+                    id_memorization_columns.append(col)
+
+        # 8. Recommended CV Splitting Strategy
+        if group_candidate:
+            recommended_split_strategy = "group_kfold"
+        elif has_temporal_order:
+            recommended_split_strategy = "time_series_split"
+        elif task_type == "classification":
+            recommended_split_strategy = "stratified_kfold"
+        else:
+            recommended_split_strategy = "kfold"
+
+        # 9. Detailed Column Summaries
         column_details: Dict[str, Any] = {}
         for col in df.columns:
             column_details[col] = {
                 "dtype": str(df[col].dtype),
                 "missing": int(cleaned_df[col].isna().sum()),
                 "unique_count": int(df[col].nunique()),
+                "is_id_candidate": col in id_memorization_columns,
             }
 
         return AuditReportDTO(
@@ -122,9 +179,12 @@ class DatasetAuditor:
             infinite_count=infinite_count,
             sentinel_count=sentinel_count,
             duplicate_rows=duplicate_rows,
-            class_imbalance_ratio=round(class_imbalance_ratio, 4) if class_imbalance_ratio else None,
+            class_imbalance_ratio=round(class_imbalance_ratio, 4) if class_imbalance_ratio is not None else None,
             recommended_metric=recommended_metric,
             group_column_candidate=group_candidate,
             has_temporal_order=has_temporal_order,
+            id_memorization_columns=id_memorization_columns,
+            target_skewness=target_skewness,
+            recommended_split_strategy=recommended_split_strategy,
             column_details=column_details,
         )

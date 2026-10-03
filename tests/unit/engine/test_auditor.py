@@ -61,5 +61,46 @@ def test_dataset_auditor_group_and_temporal_guards():
 
     # Group Guard detects customer_id
     assert report.group_column_candidate == "customer_id"
+    assert report.recommended_split_strategy == "group_kfold"
     # Temporal Guard detects transaction_date
     assert report.has_temporal_order is True
+
+
+def test_dataset_auditor_entropy_id_memorization_guard():
+    # High-entropy synthetic primary key / GUID column that would cause memorization
+    n = 150
+    user_uuids = [f"uuid_record_{i}_{np.random.randint(1000, 9999)}" for i in range(n)]
+    regular_feature = np.random.choice(["A", "B", "C"], size=n)
+    target = np.random.binomial(1, 0.5, size=n)
+
+    df = pd.DataFrame({
+        "session_hash_key": user_uuids,
+        "category": regular_feature,
+        "churn": target,
+    })
+
+    auditor = DatasetAuditor()
+    report = auditor.audit_dataset(df, target_column="churn", task_type="classification")
+
+    # ID Memorization Guard flags 100% unique high-entropy column
+    assert "session_hash_key" in report.id_memorization_columns
+    assert "category" not in report.id_memorization_columns
+
+
+def test_dataset_auditor_target_skewness_regression():
+    # Exponential right-skewed regression target
+    np.random.seed(42)
+    n = 200
+    skewed_y = np.exp(np.random.normal(3.0, 1.2, size=n))
+
+    df = pd.DataFrame({
+        "feature_1": np.random.normal(0, 1, size=n),
+        "house_price": skewed_y,
+    })
+
+    auditor = DatasetAuditor()
+    report = auditor.audit_dataset(df, target_column="house_price", task_type="regression")
+
+    assert report.target_skewness is not None
+    assert report.target_skewness > 1.0  # Captures right-skewness
+    assert report.recommended_split_strategy == "kfold"

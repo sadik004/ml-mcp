@@ -34,41 +34,45 @@ Verifies server health, active Python environment, runtime platform, and GPU acc
 ## 2. Phase 1: Data Audit & Hygiene
 
 ### `ml_audit_dataset`
-Performs a comprehensive pre-flight sanity audit on a tabular CSV dataset.
+Performs a comprehensive pre-flight sanity audit on a tabular CSV dataset incorporating Mazumder et al. (NeurIPS 2023 DataPerf).
 - **Parameters:**
   - `csv_path` (`str`, required): Absolute or relative path to CSV file.
   - `target_column` (`str`, optional): Name of the prediction target column.
+  - `task_type` (`"classification" | "regression"`, default: `"classification"`): Task type for metric selection and skewness audit.
   - `view` (`"compact" | "detailed"`, default: `"compact"`): Token shield view mode.
-- **Outputs Checked:** Sentinel values, missing percentages, zero-variance constants, high-cardinality IDs, row duplicates, and class imbalance.
+- **Outputs Checked:** Sentinel values, missing percentages, zero-variance constants, Entropy/Ratio ID memorization guard (`id_memorization_columns`), target skewness ($g_1$), recommended split strategy (`stratified_kfold`, `group_kfold`, `time_series_split`), and Accuracy Paradox guard.
 
 ### `ml_detect_target_leakage`
-Audits features for target leakage and unrealistically high correlation with the target.
+Audits features for target leakage via Pearson correlation, Bias-Corrected Cramér's V (Greenacre 2021/2023), and subsampled Mutual Information (Chaudhuri et al. 2021).
 - **Parameters:**
   - `csv_path` (`str`, required): Path to dataset CSV.
   - `target_column` (`str`, required): Target label or dependent variable.
-  - `correlation_threshold` (`float`, default: `0.95`): Pearson/Spearman cutoff for suspicious features.
-  - `view` (`"compact" | "detailed"`, default: `"compact"`)
-- **Key Warnings:** Flags perfect predictors (AUC = 1.0 or R^2 = 1.0) and future-dated timestamp columns.
+  - `task_type` (`"classification" | "regression"`, default: `"classification"`).
+  - `threshold_correlation` (`float`, default: `0.95`): Pearson correlation cutoff for suspicious continuous features.
+  - `threshold_cramers_v` (`float`, default: `0.90`): Bias-corrected Cramér's V cutoff for post-event categorical leakage.
+- **Key Warnings:** Flags numerical leakage ($r \ge 0.95$), categorical leakage ($	ilde{V} \ge 0.90$), and non-linear dependencies ($I(X; Y) \ge 0.85$).
 
 ### `ml_check_collinearity`
-Calculates Variance Inflation Factor (VIF) and Pearson/Spearman correlation matrices.
+Calculates SVD Spectral Condition Number $\kappa(X) = \sigma_{\max} / \sigma_{\min}$ (Lafon et al. Nature MI 2023), Variance Inflation Factor (VIF), and executes Iterative VIF Pruning.
 - **Parameters:**
   - `csv_path` (`str`, required): Path to dataset CSV.
-  - `target_column` (`str`, optional): Target column used for ANOVA F-score competitive twin retention.
+  - `target_column` (`str`, optional): Target column used for ANOVA F-score / Pearson competitive retention.
   - `vif_threshold` (`float`, default: `10.0`): Cutoff for multi-collinear features.
   - `correlation_cutoff` (`float`, default: `0.90`): Maximum allowed pairwise feature correlation.
+  - `condition_number_threshold` (`float`, default: `30.0`): SVD condition number threshold for ill-conditioned feature matrices.
   - `output_path` (`str`, optional): Path to save pruned dataset.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
-- **Recommendation:** Generates a list of redundant features to drop without losing model capacity.
+- **Recommendation:** Prunes pairwise collinear twins and 3+ column linear combinations ($\kappa(X) > 30$) via iterative VIF elimination.
 
 ### `ml_detect_label_errors`
-Detects corrupt, mislabeled, or noisy ground truth labels using MIT Confident Learning (Northcutt et al., 2021).
+Detects corrupt or noisy ground truth labels using MIT Confident Learning (Northcutt et al., 2021) for classification and Normalized Residual Dispersion (Papanikolaou et al. NeurIPS 2023) for regression.
 - **Parameters:**
   - `csv_path` (`str`, required): Path to training dataset CSV.
   - `target_column` (`str`, required): Ground truth label column.
   - `cv_splits` (`int`, default: `5`): Out-of-fold cross-validation folds.
+  - `task_type` (`"auto" | "classification" | "regression"`, default: `"auto"`): Task modality for label error detection.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
-- **Outputs:** Confident joint matrix, estimated noise rate, self-confidence thresholds, and ranked suspicious sample indices.
+- **Outputs:** Out-of-fold joint matrix, estimated noise rate, self-confidence thresholds, and flagged sample indices with confidence/dispersion scores.
 
 ### `ml_verify_constraints`
 Validates physical limits, non-negativity, and automated 3x-IQR statistical outlier limits inspired by Amazon Deequ (VLDB 2018).

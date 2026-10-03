@@ -104,11 +104,16 @@ def register_all_tools(mcp: FastMCP) -> None:
         csv_path: str,
         target_column: str,
         task_type: Literal["classification", "regression"] = "classification",
+        threshold_correlation: float = 0.95,
+        threshold_cramers_v: float = 0.90,
     ) -> Dict[str, Any]:
-        """Scan for suspicious features with correlation >= 0.95 or perfect mutual info."""
+        """Scan for suspicious features with correlation >= 0.95, Cramer's V >= 0.90, or high mutual info."""
         try:
             df = pd.read_csv(csv_path)
-            detector = TargetLeakageDetector()
+            detector = TargetLeakageDetector(
+                threshold_correlation=threshold_correlation,
+                threshold_cramers_v=threshold_cramers_v,
+            )
             report = detector.detect_leakage(df, target_column=target_column, task_type=task_type)
             return sanitize_for_json(report.model_dump())
         except Exception as e:
@@ -121,13 +126,18 @@ def register_all_tools(mcp: FastMCP) -> None:
         target_column: Optional[str] = None,
         vif_threshold: float = 10.0,
         correlation_cutoff: float = 0.90,
+        condition_number_threshold: float = 30.0,
         output_path: Optional[str] = None,
         view: Literal["compact", "detailed"] = "compact",
     ) -> Dict[str, Any]:
-        """Detect multicollinear features using pure NumPy VIF and Pairwise Competitive Drop Rule."""
+        """Detect multicollinear features using SVD condition number, pure NumPy VIF and Iterative Pruning."""
         try:
             df = pd.read_csv(csv_path)
-            collin_filter = CollinearityFilter(threshold_corr=correlation_cutoff, vif_threshold=vif_threshold)
+            collin_filter = CollinearityFilter(
+                threshold_corr=correlation_cutoff,
+                vif_threshold=vif_threshold,
+                condition_number_threshold=condition_number_threshold,
+            )
             pruned_df, report = collin_filter.filter_collinearity(df, target_column=target_column)
             
             # Dataset chaining: Persist pruned dataframe to disk
@@ -160,13 +170,14 @@ def register_all_tools(mcp: FastMCP) -> None:
         csv_path: str,
         target_column: str,
         cv_splits: int = 5,
+        task_type: Literal["auto", "classification", "regression"] = "auto",
         view: Literal["compact", "detailed"] = "compact",
     ) -> Dict[str, Any]:
-        """Detect corrupt/noisy ground truth training labels via MIT Confident Learning."""
+        """Detect corrupt/noisy training labels via MIT Confident Learning (classification) or Residual Dispersion (regression)."""
         try:
             df = pd.read_csv(csv_path)
             detector = LabelErrorDetector(cv_splits=cv_splits)
-            report = detector.detect_label_errors(df, target_column=target_column)
+            report = detector.detect_label_errors(df, target_column=target_column, task_type=task_type)
             res = report.to_compact() if view == "compact" else report.model_dump()
             return sanitize_for_json(res)
         except Exception as e:

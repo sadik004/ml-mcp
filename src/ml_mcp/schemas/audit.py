@@ -28,6 +28,15 @@ class AuditReportDTO(BaseDTO):
     has_temporal_order: bool = Field(
         default=False, description="Flag indicating datetime sequence necessitating TimeSeriesSplit"
     )
+    id_memorization_columns: List[str] = Field(
+        default_factory=list, description="High-entropy / unique ID columns flagged for removal to prevent memorization"
+    )
+    target_skewness: Optional[float] = Field(
+        default=None, description="Fisher-Pearson skewness coefficient for continuous targets"
+    )
+    recommended_split_strategy: str = Field(
+        default="stratified_kfold", description="Recommended CV splitting strategy (stratified, group, time_series, kfold)"
+    )
     column_details: Dict[str, Any] = Field(
         default_factory=dict, description="Detailed per-column dtypes, cardinality, and skew"
     )
@@ -45,6 +54,9 @@ class AuditReportDTO(BaseDTO):
             "recommended_metric": self.recommended_metric,
             "group_column_candidate": self.group_column_candidate,
             "has_temporal_order": self.has_temporal_order,
+            "id_memorization_columns": self.id_memorization_columns,
+            "target_skewness": round(self.target_skewness, 4) if self.target_skewness is not None else None,
+            "recommended_split_strategy": self.recommended_split_strategy,
         }
 
 
@@ -61,18 +73,22 @@ class TargetLeakageReportDTO(BaseDTO):
     mutual_info_scores: Dict[str, float] = Field(
         default_factory=dict, description="Mutual information scores with the target"
     )
+    cramers_v_scores: Dict[str, float] = Field(
+        default_factory=dict, description="Bias-corrected Cramér's V scores for categorical predictors"
+    )
     has_critical_leakage: bool = Field(
         default=False, description="True if any feature exceeds leakage threshold"
     )
 
     def to_compact(self) -> Dict[str, Any]:
+        max_corr = max(self.correlation_matrix.values()) if self.correlation_matrix else 0.0
+        max_v = max(self.cramers_v_scores.values()) if self.cramers_v_scores else 0.0
         return {
             "target_column": self.target_column,
             "has_critical_leakage": self.has_critical_leakage,
             "leaked_features": self.leaked_features,
-            "highest_correlation": (
-                round(max(self.correlation_matrix.values()), 4) if self.correlation_matrix else 0.0
-            ),
+            "highest_correlation": round(max_corr, 4),
+            "highest_cramers_v": round(max_v, 4),
         }
 
 
@@ -115,8 +131,9 @@ class LabelErrorReportDTO(BaseDTO):
     total_samples: int = Field(description="Total evaluated samples")
     total_errors: int = Field(description="Total detected label errors")
     error_rate: float = Field(description="Estimated label noise ratio")
+    task_type: str = Field(default="classification", description="Task type evaluated (classification or regression)")
     class_thresholds: Dict[str, float] = Field(
-        default_factory=dict, description="Per-class self-confidence thresholds t_j"
+        default_factory=dict, description="Per-class self-confidence thresholds t_j (for classification)"
     )
     flagged_samples: List[LabelErrorSampleDTO] = Field(
         default_factory=list, description="Samples flagged as label errors"
@@ -127,6 +144,7 @@ class LabelErrorReportDTO(BaseDTO):
             "total_samples": self.total_samples,
             "total_errors": self.total_errors,
             "error_rate": round(self.error_rate, 4),
+            "task_type": self.task_type,
             "class_thresholds": {k: round(v, 4) for k, v in self.class_thresholds.items()},
             "flagged_count": len(self.flagged_samples),
         }
@@ -187,3 +205,29 @@ class DatasetLineageDTO(BaseDTO):
     total_rows: int = Field(ge=0, description="Total rows in dataset snapshot")
     total_columns: int = Field(ge=0, description="Total columns in dataset snapshot")
     timestamp: str = Field(description="ISO 8601 creation timestamp")
+
+
+class CollinearityReportDTO(BaseDTO):
+    """Report detailing multicollinearity, VIF, SVD condition number, and pruned features."""
+    threshold_corr: float = Field(description="Pairwise correlation cutoff threshold")
+    vif_threshold: float = Field(description="VIF cutoff threshold")
+    spectral_condition_number: Optional[float] = Field(
+        default=None, description="SVD condition number kappa(X) = sigma_max / sigma_min"
+    )
+    vif_scores: Dict[str, float] = Field(default_factory=dict, description="VIF score per feature")
+    high_vif_features: List[str] = Field(default_factory=list, description="Features exceeding VIF threshold")
+    collinear_pairs: List[Dict[str, Any]] = Field(default_factory=list, description="Pairwise collinear candidates")
+    dropped_features: List[str] = Field(default_factory=list, description="Features pruned to eliminate collinearity")
+    remaining_features_count: int = Field(ge=0, description="Count of retained features")
+    selection_metric: str = Field(default="competitive", description="Signal metric used for feature survival")
+
+    def to_compact(self) -> Dict[str, Any]:
+        return {
+            "spectral_condition_number": (
+                round(self.spectral_condition_number, 2) if self.spectral_condition_number is not None else None
+            ),
+            "high_vif_count": len(self.high_vif_features),
+            "dropped_count": len(self.dropped_features),
+            "dropped_features": self.dropped_features,
+            "remaining_features_count": self.remaining_features_count,
+        }
