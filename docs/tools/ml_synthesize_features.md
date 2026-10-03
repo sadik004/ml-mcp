@@ -79,6 +79,8 @@
 | **`period`** | `number` | `24.0` | ঐচ্ছিক | চক্রের পর্যায়কাল (ঘণ্টার জন্য ২৪, সপ্তাহের জন্য ৭, মাসের জন্য ১২)। |
 | **`ratio_pairs`** | `List[List[str]] \| null` | `null` | ঐচ্ছিক | যে কলাম জোড়াগুলোর নিরাপদ ভাগফল বের করতে হবে (`[["price", "weight"]]`)। |
 | **`group_specs`** | `List[Dict[str, Any]] \| null` | `null` | ঐচ্ছিক | ExploreKit গ্রুপ স্পেসিফিকেশন ডিকশনারির লিস্ট। |
+| **`output_path`** | `string \| null` | `null` | ঐচ্ছিক | সিন্থেসাইজড ফিচারসহ ডেটাসেটটি যে ফাইলে সেভ হবে (না দিলে স্বয়ংক্রিয়ভাবে `processed/{name}_synthesized.csv` পাথে সেভ হয়)। |
+| **`output_path`** | `string \| null` | `null` | ঐচ্ছিক | সিন্থেসাইজড ফিচারসহ ডেটাসেটটি যে ফাইলে সেভ হবে (না দিলে স্বয়ংক্রিয়ভাবে `processed/{name}_synthesized.csv` পাথে সেভ হয়)। |
 
 ### `group_specs`-এর স্ট্রাকচার:
 ```json

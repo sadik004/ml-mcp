@@ -36,13 +36,15 @@
 ### ম্যাথমেটিক্যাল মেকানিজম (Mathematical Formulation):
 প্রতিটি ফিচার $f_i \in \mathcal{F}$-এর জন্য একটি আল্ট্রা-ফাস্ট হিস্টোগ্রাম বুস্টার ফিট করার পর, ফিচারটির মান এলোমেলোভাবে শাফেল (Shuffle) করে মডেলের পারফর্মেন্সের ড্রপ মাপা হয় (Permutation Importance):
 
-$$I(f_i) = \max\left(0, \mathcal{L}(	ilde{X}^{(i)}, y) - \mathcal{L}(X, y)ight)$$
+$$I(f_i) = \max\left(0, \mathcal{L}(	ilde{X}^{(i)}, y) - \mathcal{L}(X, y)
+ight)$$
 
 এখানে $	ilde{X}^{(i)}$ হলো ফিচার $f_i$-কে পারমিউট বা শাফেল করার পর পরিবর্তিত ডেটাসেট এবং $\mathcal{L}$ হলো মডেলের লস বা স্কোরের অবনতি।
 
 এরপর সমস্ত প্রাপ্ত স্কোরকে ইউনিট সামে নরমালাইজ করা হয়:
 
-$$ar{I}(f_i) = rac{I(f_i)}{\sum_{j=1}^{M} I(f_j)} \quad 	ext{such that } \sum_{i=1}^{M} ar{I}(f_i) = 1.0$$
+$$ar{I}(f_i) = 
+rac{I(f_i)}{\sum_{j=1}^{M} I(f_j)} \quad 	ext{such that } \sum_{i=1}^{M} ar{I}(f_i) = 1.0$$
 
 **চূড়ান্ত সিলেকশন ও প্রুনিং ক্রাইটেরিয়া:**
 $$	ext{Retain } f_i \iff ar{I}(f_i) \ge 	au \quad \lor \quad 	ext{Rank}(f_i) \le K$$
@@ -75,6 +77,8 @@ $$	ext{Retain } f_i \iff ar{I}(f_i) \ge 	au \quad \lor \quad 	ext{Rank}(f_i) \l
 | **`top_k`** | `integer \| null` | `null` | ঐচ্ছিক | সর্বোচ্চ কতটি শীর্ষ ফিচার ধরে রাখতে চান (যেমন: `10`)। |
 | **`importance_threshold`** | `float` | `0.005` | ঐচ্ছিক | ন্যূনতম আপেক্ষিক গুরুত্ব (০.৫%)। এর নিচের ফিচার ড্রপ হবে। |
 | **`task_type`** | `enum` | `"auto"` | ঐচ্ছিক | `"auto"`, `"classification"`, বা `"regression"`। |
+| **`output_path`** | `string | null` | `null` | ঐচ্ছিক | ছাঁটাইকৃত ডেটাসেটটি যে ফাইলে সেভ হবে (না দিলে স্বয়ংক্রিয়ভাবে `processed/{name}_pruned.csv` পাথে সেভ হয়)। |
+| **`view`** | `enum` | `"compact"` | ঐচ্ছিক | `"compact"` বা `"detailed"` রেসপন্স মোড। |
 
 ---
 
