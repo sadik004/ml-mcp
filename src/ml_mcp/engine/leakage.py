@@ -135,7 +135,14 @@ class TargetLeakageDetector:
                 y_cat = pd.Categorical(y_sub).codes
                 clf = DecisionTreeClassifier(max_depth=1, random_state=42)
                 scores = cross_val_score(clf, X_mat, y_cat, cv=3, scoring="accuracy")
-                return round(float(np.mean(scores)), 4)
+                model_score = float(np.mean(scores))
+                # Wetschoreck et al. PPS: normalized against majority class baseline
+                _, counts = np.unique(y_cat, return_counts=True)
+                baseline_acc = float(np.max(counts) / len(y_cat)) if len(y_cat) > 0 else 0.5
+                if baseline_acc >= 1.0 - 1e-6:
+                    return 0.0
+                norm_pps = (model_score - baseline_acc) / (1.0 - baseline_acc)
+                return round(float(np.clip(norm_pps, 0.0, 1.0)), 4)
             else:
                 y_num = y_sub.to_numpy(dtype=np.float64)
                 reg = DecisionTreeRegressor(max_depth=1, random_state=42)

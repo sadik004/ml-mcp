@@ -55,6 +55,10 @@ def test_all_25_tools_registered():
         "ml_pseudo_label_loop",
         "ml_generate_colab_notebook",
         "ml_cancel_job",
+        "ml_preflight_audit",
+        "ml_prepare_feature_pipeline",
+        "ml_run_model_tournament",
+        "ml_certify_safety_and_decisions",
     ]
 
     # In FastMCP, tools are tracked in mcp._tool_manager or via get_tools()

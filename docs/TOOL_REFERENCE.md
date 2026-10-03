@@ -33,6 +33,12 @@ Verifies server health, active Python environment, runtime platform, and GPU acc
 
 ## 2. Phase 1: Data Audit & Hygiene
 
+### `ml_preflight_audit`
+**Phase 1 Master Pre-Flight Hygiene Orchestrator.**
+- **Signature:** `ml_preflight_audit(csv_path: str, target_column: str, task_type: Literal['classification', 'regression'] = 'classification', dataset_name: str = 'Dataset', view: Literal['compact', 'detailed'] = 'compact')`
+- **Output:** `PreflightAuditReportDTO` containing cryptographic SHA-256 data lineage, missingness & outlier profiling, normalized Cramér's V/PPS leakage radar, Belsley collinearity checks, Cleanlab confident learning label errors, and domain constraint verification.
+- **Reference Guide:** [docs/phases/phase-01-data-audit-and-hygiene/ml_preflight_audit.md](phases/phase-01-data-audit-and-hygiene/ml_preflight_audit.md)
+
 ### `ml_audit_dataset`
 Performs a comprehensive pre-flight sanity audit on a tabular CSV dataset incorporating Mazumder et al. (NeurIPS 2023 DataPerf).
 - **Parameters:**
@@ -95,6 +101,12 @@ Cryptographic artifact and dataset lineage tracker computing SHA-256 digests and
 ---
 
 ## 3. Phase 2: Defensive Feature Engineering
+
+### `ml_prepare_feature_pipeline`
+**Phase 2 Master Feature Engineering & Preprocessing Orchestrator.**
+- **Signature:** `ml_prepare_feature_pipeline(csv_path: str, target_column: str, task_type: Literal['classification', 'regression'] = 'classification', enable_synthesis: bool = True, enable_pruning: bool = True, view: Literal['compact', 'detailed'] = 'compact')`
+- **Output:** `FeaturePipelineReportDTO` containing cyclical Fourier temporal harmonics, manifold outlier L2 distances, ExploreKit group-bys, defensive median/mode imputation, RobustScaler, cost-sensitive class balancing, and permutation importance pruning.
+- **Reference Guide:** [docs/phases/phase-02-feature-engineering/ml_prepare_feature_pipeline.md](phases/phase-02-feature-engineering/ml_prepare_feature_pipeline.md)
 
 ### `ml_handle_text_features`
 Detects and embeds free-form natural language text columns while rejecting random UUIDs and hashes.

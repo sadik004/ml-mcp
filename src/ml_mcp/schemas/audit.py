@@ -1,7 +1,7 @@
 """Data Hygiene, Pre-Flight Audit, and Leakage DTOs."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import Field
 from ml_mcp.schemas.base import BaseDTO
 
@@ -246,3 +246,35 @@ class CollinearityReportDTO(BaseDTO):
             "dropped_features": self.dropped_features,
             "remaining_features_count": self.remaining_features_count,
         }
+
+class PreflightAuditReportDTO(BaseDTO):
+    """Unified Phase 1 Master Pre-Flight Quality Report DTO."""
+
+    dataset_name: str = Field(description="Name or path of evaluated dataset")
+    health_score: int = Field(ge=0, le=100, description="Overall pre-flight health score 0-100")
+    readiness_verdict: Literal["PASSED", "CONDITIONAL_PASS", "BLOCKED"] = Field(
+        description="Traffic light readiness status: PASSED (green), CONDITIONAL_PASS (yellow), BLOCKED (red)"
+    )
+    sha256_hash: str = Field(description="Cryptographic SHA-256 fingerprint of raw dataset")
+    row_count: int = Field(ge=0, description="Total number of samples")
+    column_count: int = Field(ge=0, description="Total number of features")
+    duplicate_rows: int = Field(ge=0, description="Number of exact duplicate rows")
+    critical_red_flags: List[str] = Field(default_factory=list, description="Severe blockers requiring remediation before Phase 2")
+    warnings: List[str] = Field(default_factory=list, description="Statistical warnings and hygiene notes")
+    audit_summary: Dict[str, Any] = Field(default_factory=dict, description="Condensed summary of 6 underlying engine outputs")
+    executive_card: str = Field(description="Formatted human-readable Markdown quality card")
+
+    def to_compact(self) -> Dict[str, Any]:
+        return {
+            "dataset_name": self.dataset_name,
+            "health_score": self.health_score,
+            "readiness_verdict": self.readiness_verdict,
+            "sha256_hash": self.sha256_hash[:16] + "..." + self.sha256_hash[-8:],
+            "shape": [self.row_count, self.column_count],
+            "critical_red_flags_count": len(self.critical_red_flags),
+            "critical_red_flags": self.critical_red_flags,
+            "warnings_count": len(self.warnings),
+            "warnings": self.warnings,
+            "executive_card": self.executive_card,
+        }
+

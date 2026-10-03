@@ -8,6 +8,10 @@ Comprehensive architectural guides, human histories, mathematical foundations, p
 
 | Tool | Category | Theoretical SOTA Reference | Guide Link |
 | :--- | :--- | :--- | :--- |
+| **ml_preflight_audit** | Phase 1: Master Orchestrator | Complete Pre-Flight Lineage, Leakage, Collinearity & Quality Audit | [ml_preflight_audit.md](ml_preflight_audit.md) |
+| **ml_prepare_feature_pipeline** | Phase 2: Master Orchestrator | Automated Feature Synthesis, Scaling, Balancing & Pruning Pipeline | [ml_prepare_feature_pipeline.md](ml_prepare_feature_pipeline.md) |
+| **ml_run_model_tournament** | Phase 3: Master Orchestrator | Cross-Validated Model Tournament & Anti-Overfit Bayesian Tuning | [ml_run_model_tournament.md](ml_run_model_tournament.md) |
+| **ml_certify_safety_and_decisions** | Phase 4: Master Orchestrator | Calibration (ECE), Decision Curve Analysis (p*), TreeSHAP & OOD Safety Certificate | [ml_certify_safety_and_decisions.md](ml_certify_safety_and_decisions.md) |
 | **ml_audit_dataset** | Phase 1: Data Audit & Hygiene | Dirac-Delta Sentinels & Hubert Medcouple | [ml_audit_dataset.md](ml_audit_dataset.md) |
 | **ml_detect_target_leakage** | Phase 1: Data Audit & Hygiene | Chatterjee (JASA 2021) & Cramér's V (2023) | [ml_detect_target_leakage.md](ml_detect_target_leakage.md) |
 | **ml_check_collinearity** | Phase 1: Data Audit & Hygiene | SVD Condition Number & Belsley Decomposition | [ml_check_collinearity.md](ml_check_collinearity.md) |

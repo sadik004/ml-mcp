@@ -17,6 +17,10 @@ class OptunaStudyDTO(BaseDTO):
     pruned_trials: int = Field(default=0, ge=0, description="Trials terminated early by MedianPruner")
     direction: str = Field(default="maximize", description="maximize or minimize")
     metric: str = Field(description="Optimization metric name")
+    train_value: Optional[float] = Field(default=None, description="Score achieved on training folds")
+    generalization_gap: Optional[float] = Field(default=None, description="Gap between train and validation score")
+    gap_status: Optional[str] = Field(default=None, description="HEALTHY, MODERATE, or SEVERE_OVERFIT")
+    cv_std: Optional[float] = Field(default=None, description="Standard deviation across validation folds")
 
     def to_compact(self) -> Dict[str, Any]:
         return {

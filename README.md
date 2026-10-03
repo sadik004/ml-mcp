@@ -140,6 +140,10 @@ All tools are decorated with @mcp.tool(), protected by the Token Shield, and ret
 | # | Tool Identifier | Category | Primary Functionality |
 |---|---|---|---|
 | **1** | ml_ping | **Core** | Server health, Python environment, platform & CUDA GPU detection. |
+| **M1** | ml_preflight_audit | **Phase 1: Master** | Complete pre-flight data hygiene audit combining SHA-256 lineage, leakage, collinearity, label errors & constraints. |
+| **M2** | ml_prepare_feature_pipeline | **Phase 2: Master** | Automated feature pipeline combining cyclical temporal harmonics, manifold outlier features, defensive scaling/imputation, and pruning. |
+| **M3** | ml_run_model_tournament | **Phase 3: Master** | 5-Fold cross-validated model tournament & Optuna Bayesian hyperparameter tuning with generalization gap penalization and KISS stacking gate. |
+| **M4** | ml_certify_safety_and_decisions | **Phase 4: Master** | Full model certification suite: Platt/Beta calibration (ECE), Decision Curve Analysis (cost-loss threshold p*), TreeSHAP attributions, Conformal 95% coverage, and OOD cutoff. |
 | **1** | ml_audit_dataset | **Phase 1: Hygiene** | Pre-flight scan: MCAR vs MNAR missingness tests, DataPerf index memorization (NeurIPS 2023), and Benford's law anomaly check. |
 | **2** | ml_detect_target_leakage | **Phase 1: Hygiene** | Target leakage detection via Chatterjee rank correlation xi (JASA 2021), Cramér's V (2023), and PPS decision tree. |
 | **3** | ml_check_collinearity | **Phase 1: Hygiene** | Multicollinearity audit via SVD Spectral Condition Number (Nature MI 2023), Ridge-VIF, and Belsley variance proportions. |

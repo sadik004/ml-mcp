@@ -78,3 +78,35 @@ class LineageDTO(BaseDTO):
     random_seed: int = Field(default=42, description="Reproducibility random seed")
     git_commit: Optional[str] = Field(default=None, description="Active git commit hash")
     checkpoint_path: str = Field(description="Storage path to the checkpoint .joblib")
+
+class TournamentAndTuningReportDTO(BaseDTO):
+    """Unified Phase 3 Master Tournament & Anti-Overfit Tuning Report DTO."""
+
+    champion_architecture: str = Field(description="Architecture name of final winning champion")
+    primary_metric: str = Field(description="Optimized evaluation metric (e.g. pr_auc, roc_auc)")
+    champion_score: float = Field(description="Final cross-validated primary metric score")
+    baseline_champion_score: float = Field(description="Score before hyperparameter tuning")
+    tuning_lift: float = Field(description="Score improvement delta achieved by Bayesian tuning")
+    generalization_gap: float = Field(description="Difference between train score and validation score")
+    gap_status: str = Field(description="HEALTHY (gap <= 0.03), MODERATE (gap <= 0.08), or SEVERE_OVERFIT")
+    cv_fold_std: float = Field(description="Standard deviation across cross-validation folds")
+    best_hyperparameters: Dict[str, Any] = Field(default_factory=dict, description="Optimal hyperparameters selected")
+    is_stacking_adopted: bool = Field(description="Whether stacking ensemble beat single model by >= 0.003")
+    champion_artifact_path: Optional[str] = Field(default=None, description="Path to fitted champion model .joblib")
+    oof_predictions_path: Optional[str] = Field(default=None, description="Path to saved out-of-fold probability array")
+    tournament_card: str = Field(description="Formatted human-readable Markdown tournament card")
+
+    def to_compact(self) -> Dict[str, Any]:
+        return {
+            "champion_architecture": self.champion_architecture,
+            "primary_metric": self.primary_metric,
+            "champion_score": round(self.champion_score, 4),
+            "tuning_lift": round(self.tuning_lift, 4),
+            "generalization_gap": round(self.generalization_gap, 4),
+            "gap_status": self.gap_status,
+            "cv_fold_std": round(self.cv_fold_std, 4),
+            "is_stacking_adopted": self.is_stacking_adopted,
+            "best_hyperparameters": self.best_hyperparameters,
+            "tournament_card": self.tournament_card,
+        }
+

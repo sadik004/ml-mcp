@@ -16,6 +16,7 @@ flowchart LR
 
 ### 🔍 [Phase 1: Data Audit & Hygiene](phase-01-data-audit-and-hygiene/)
 > **Mission:** Pre-flight statistical auditing, cryptographic data integrity, and leakage prevention before any modeling begins.
+- **Master Orchestrator:** [ml_preflight_audit](phase-01-data-audit-and-hygiene/ml_preflight_audit.md) — Single-pass master audit combining SHA-256 lineage, leakage detection, collinearity, label errors, and domain constraints.
 - **Topic 1:** [ml_audit_dataset](phase-01-data-audit-and-hygiene/ml_audit_dataset.md) — Digital stethoscope, SentinelHunter & Accuracy Paradox Guard.
 - **Topic 2:** [ml_detect_target_leakage](phase-01-data-audit-and-hygiene/ml_detect_target_leakage.md) — Pearson correlation & mutual information leakage detection.
 - **Topic 3:** [ml_check_collinearity](phase-01-data-audit-and-hygiene/ml_check_collinearity.md) — Pure NumPy VIF calculation, multicollinearity detection & competitive twin feature pruning.
@@ -27,6 +28,7 @@ flowchart LR
 
 ### ⚙️ [Phase 2: Feature Engineering & Preprocessing](phase-02-feature-engineering/)
 > **Mission:** Transforming raw tabular data, NLP feature extraction, class balancing, and automated defensive pipelines.
+- **Master Orchestrator:** [ml_prepare_feature_pipeline](phase-02-feature-engineering/ml_prepare_feature_pipeline.md) — Unified pipeline orchestrator for cyclical harmonics, latent manifold L2 outlier features, robust scaling, class weights, and permutation pruning.
 - **Topic 1:** [ml_auto_clean_and_pipe](phase-02-feature-engineering/ml_auto_clean_and_pipe.md) — End-to-end scikit-learn ColumnTransformer pipeline generation with automated type inference.
 - **Topic 2:** [ml_handle_text_features](phase-02-feature-engineering/ml_handle_text_features.md) — TF-IDF and SBERT embedding extraction for high-cardinality text columns.
 - **Topic 3:** [ml_balance_classes](phase-02-feature-engineering/ml_balance_classes.md) — SMOTE, ADASYN, and class weight balancing for highly imbalanced labels.
@@ -38,6 +40,7 @@ flowchart LR
 
 ### 🏆 [Phase 3: Model Training, Benchmarking & Refinement](phase-03-model-training-and-refinement/)
 > **Mission:** Competitive arena cross-validation, hyperparameter tuning, cloud GPU execution, and semi-supervised refinement.
+- **Master Orchestrator:** [ml_run_model_tournament](phase-03-model-training-and-refinement/ml_run_model_tournament.md) — 5-Fold cross-validated tournament with anti-overfit penalized Optuna Bayesian tuning and KISS stacking gate.
 - **Topic 1:** [ml_benchmark_models](phase-03-model-training-and-refinement/ml_benchmark_models.md) — 8-model competitive arena, overfitting guards, latency profiling & stacking.
 - **Topic 2:** [ml_tune_hyperparameters](phase-03-model-training-and-refinement/ml_tune_hyperparameters.md) — Bayesian Optimization via Optuna TPE sampler with MedianPruner early stopping.
 - **Topic 3:** [ml_create_ensemble](phase-03-model-training-and-refinement/ml_create_ensemble.md) — Leak-free Out-Of-Fold (OOF) Stacking Ensemble blending top tournament performers.
@@ -47,6 +50,7 @@ flowchart LR
 
 ### 🛡️ [Phase 4: Validation, Risk & AI Safety](phase-04-validation-and-safety/)
 > **Mission:** Conformal risk control, probability calibration, decision thresholds, stress testing, and out-of-distribution detection.
+- **Master Orchestrator:** [ml_certify_safety_and_decisions](phase-04-validation-and-safety/ml_certify_safety_and_decisions.md) — End-to-end safety certificate: Platt/Beta calibration (ECE), Decision Curve Analysis (dollar cost-loss p*), TreeSHAP attributions, Conformal 95% coverage, and OOD anomaly cutoff.
 - **Topic 1:** [ml_conformal_risk_control](phase-04-validation-and-safety/ml_conformal_risk_control.md) — UC Berkeley Conformal Risk Control providing mathematical guarantees E[loss] <= alpha.
 - **Topic 2:** [ml_calibrate_probabilities](phase-04-validation-and-safety/ml_calibrate_probabilities.md) — Platt Scaling & Isotonic Regression aligning posterior probabilities with true empirical risk.
 - **Topic 3:** [ml_tune_threshold_and_errors](phase-04-validation-and-safety/ml_tune_threshold_and_errors.md) — Cost-sensitive decision threshold optimization using F-beta and error forensics.

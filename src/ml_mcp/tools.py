@@ -42,6 +42,10 @@ from ml_mcp.engine.text_handler import TextFeatureHandler
 from ml_mcp.engine.threshold import DecisionThresholdOptimizer
 from ml_mcp.engine.tournament import TournamentArena
 from ml_mcp.engine.tuner import BayesianTuner
+from ml_mcp.engine.preflight_auditor import PreflightAuditor
+from ml_mcp.engine.feature_orchestrator import FeaturePipelineOrchestrator
+from ml_mcp.engine.tournament_orchestrator import TournamentOrchestrator
+from ml_mcp.engine.safety_orchestrator import SafetyOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +83,28 @@ def _persist_processed_dataframe(
 
 def register_all_tools(mcp: FastMCP) -> None:
     """Register all 25 production tools onto FastMCP instance."""
+
+    # =========================================================================
+    # PHASE 1: DATA AUDIT & HYGIENE (MASTER PREFLIGHT AUDITOR)
+    # =========================================================================
+
+    @mcp.tool()
+    async def ml_preflight_audit(
+        csv_path: str,
+        target_column: str,
+        task_type: Literal["classification", "regression"] = "classification",
+        dataset_name: str = "Dataset",
+        view: Literal["compact", "detailed"] = "compact",
+    ) -> Dict[str, Any]:
+        """Phase 1 Master Pre-Flight Audit: Unified SHA-256 Lineage, Leakage, Collinearity, Label Error and Constraint Verification."""
+        try:
+            df = pd.read_csv(csv_path)
+            auditor = PreflightAuditor()
+            report = auditor.audit(df, target_column=target_column, task_type=task_type, dataset_name=dataset_name)
+            res = report.to_compact() if view == "compact" else report.model_dump()
+            return sanitize_for_json(res)
+        except Exception as e:
+            return format_error_envelope(e, "ml_preflight_audit", ["csv_path", "target_column"])
 
     # 1. ml_audit_dataset
     @mcp.tool()
@@ -199,6 +225,35 @@ def register_all_tools(mcp: FastMCP) -> None:
             return sanitize_for_json(res)
         except Exception as e:
             return format_error_envelope(e, "ml_verify_constraints", ["csv_path"])
+
+    # =========================================================================
+    # PHASE 2: FEATURE ENGINEERING & PREPROCESSING (MASTER FEATURE PIPELINE)
+    # =========================================================================
+
+    @mcp.tool()
+    async def ml_prepare_feature_pipeline(
+        csv_path: str,
+        target_column: str,
+        task_type: Literal["classification", "regression"] = "classification",
+        enable_synthesis: bool = True,
+        enable_pruning: bool = True,
+        view: Literal["compact", "detailed"] = "compact",
+    ) -> Dict[str, Any]:
+        """Phase 2 Master Feature Engineering: Temporal harmonics, manifold outlier features, defensive scaling and imputation, cost-sensitive class balancing, and permutation pruning."""
+        try:
+            df = pd.read_csv(csv_path)
+            orchestrator = FeaturePipelineOrchestrator()
+            report = orchestrator.prepare_pipeline(
+                df=df,
+                target_column=target_column,
+                task_type=task_type,
+                enable_synthesis=enable_synthesis,
+                enable_pruning=enable_pruning,
+            )
+            res = report.to_compact() if view == "compact" else report.model_dump()
+            return sanitize_for_json(res)
+        except Exception as e:
+            return format_error_envelope(e, "ml_prepare_feature_pipeline", ["csv_path", "target_column"])
 
     # 3. ml_handle_text_features
     @mcp.tool()
@@ -396,6 +451,41 @@ def register_all_tools(mcp: FastMCP) -> None:
             return format_error_envelope(e, "ml_transform_target", ["csv_path", "target_column", "values"])
 
     # 7. ml_benchmark_models
+    # =========================================================================
+    # PHASE 3: MODEL TRAINING & REFINEMENT (MASTER TOURNAMENT & TUNER)
+    # =========================================================================
+
+    @mcp.tool()
+    async def ml_run_model_tournament(
+        csv_path: str,
+        target_column: str,
+        task_type: Literal["classification", "regression"] = "classification",
+        primary_metric: str = "pr_auc",
+        n_splits: int = 5,
+        tune_trials: int = 20,
+        overfit_penalty_lambda: float = 1.0,
+        view: Literal["compact", "detailed"] = "compact",
+    ) -> Dict[str, Any]:
+        """Phase 3 Master Model Tournament and Anti-Overfit Tuning: 5-fold CV baseline tournament, Optuna hyperparameter tuning penalized for train-val generalization gap and CV variance, and KISS stacking gate."""
+        try:
+            df = pd.read_csv(csv_path)
+            X = df.drop(columns=[target_column])
+            y = df[target_column]
+            orchestrator = TournamentOrchestrator()
+            report = orchestrator.run_tournament_and_tuning(
+                X=X,
+                y=y,
+                task_type=task_type,
+                primary_metric=primary_metric,
+                n_splits=n_splits,
+                tune_trials=tune_trials,
+                overfit_penalty_lambda=overfit_penalty_lambda,
+            )
+            res = report.to_compact() if view == "compact" else report.model_dump()
+            return sanitize_for_json(res)
+        except Exception as e:
+            return format_error_envelope(e, "ml_run_model_tournament", ["csv_path", "target_column"])
+
     @mcp.tool()
     async def ml_benchmark_models(
         csv_path: str,
@@ -488,6 +578,49 @@ def register_all_tools(mcp: FastMCP) -> None:
             return sanitize_for_json(study_dto.to_compact())
         except Exception as e:
             return format_error_envelope(e, "ml_tune_hyperparameters", ["csv_path", "target_column", "model_name"])
+
+    # =========================================================================
+    # PHASE 4: VALIDATION & SAFETY (MASTER SAFETY & DECISION CERTIFICATE)
+    # =========================================================================
+
+    @mcp.tool()
+    async def ml_certify_safety_and_decisions(
+        csv_path: str,
+        target_column: str,
+        cost_fp: float = 5.0,
+        cost_fn: float = 250.0,
+        model_path: Optional[str] = None,
+        view: Literal["compact", "detailed"] = "compact",
+    ) -> Dict[str, Any]:
+        """Phase 4 Master Model Certification: Probability calibration (Platt/Beta with ECE audit), Decision Curve Analysis (cost-loss threshold optimization for p*), Fast TreeSHAP attributions, Conformal Risk Control (95 percent coverage guarantee), and Helmholtz/IForest OOD anomaly cutoff."""
+        try:
+            df = pd.read_csv(csv_path)
+            X = df.drop(columns=[target_column])
+            y = df[target_column]
+            orchestrator = SafetyOrchestrator()
+            if model_path and os.path.exists(model_path):
+                import joblib
+                model = joblib.load(model_path)
+            else:
+                from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+                try:
+                    model = HistGradientBoostingClassifier(random_state=42)
+                    model.fit(X, y)
+                except Exception:
+                    model = RandomForestClassifier(n_estimators=50, random_state=42)
+                    model.fit(X, y)
+
+            report = orchestrator.certify_model(
+                model=model,
+                X=X,
+                y=y,
+                cost_fp=cost_fp,
+                cost_fn=cost_fn,
+            )
+            res = report.to_compact() if view == "compact" else report.model_dump()
+            return sanitize_for_json(res)
+        except Exception as e:
+            return format_error_envelope(e, "ml_certify_safety_and_decisions", ["csv_path", "target_column"])
 
     # 11. ml_calibrate_probabilities
     @mcp.tool()

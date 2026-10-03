@@ -1,7 +1,7 @@
 """AI Safety, Out-of-Distribution (OOD), Stress Testing, and Slice Fairness DTOs."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import Field
 from ml_mcp.schemas.base import BaseDTO
 
@@ -111,3 +111,31 @@ class CRCReportDTO(BaseDTO):
             "ambiguity_rate": round(self.ambiguity_rate, 4),
             "human_triage_count": self.human_triage_count,
         }
+
+class SafetyCertificateReportDTO(BaseDTO):
+    """Unified Phase 4 Master Safety, Calibration & Decision Certificate Report DTO."""
+
+    optimal_threshold: float = Field(description="DCA-optimal cutoff threshold p*")
+    naive_50_dollar_loss: float = Field(description="Expected loss using naive 0.50 threshold")
+    optimal_dollar_loss: float = Field(description="Expected loss using optimal p* threshold")
+    net_dollar_savings: float = Field(description="Dollar savings achieved by optimal thresholding")
+    false_positive_reduction_pct: float = Field(description="Percentage reduction in false positives")
+    raw_ece: float = Field(description="Raw Expected Calibration Error before Platt/Beta scaling")
+    calibrated_ece: float = Field(description="Calibrated Expected Calibration Error")
+    top_shap_drivers: List[str] = Field(default_factory=list, description="Top decision-driving features by TreeSHAP")
+    conformal_coverage_pct: float = Field(description="Realized empirical coverage percentage (target 95%)")
+    conformal_singleton_pct: float = Field(description="Percentage of samples with unique non-ambiguous prediction set")
+    ood_cutoff_boundary: float = Field(description="Helmholtz Free Energy 99th percentile cutoff")
+    safety_card: str = Field(description="Formatted human-readable Markdown safety certificate card")
+
+    def to_compact(self) -> Dict[str, Any]:
+        return {
+            "optimal_threshold": round(self.optimal_threshold, 4),
+            "net_dollar_savings": round(self.net_dollar_savings, 2),
+            "false_positive_reduction_pct": round(self.false_positive_reduction_pct, 1),
+            "calibrated_ece": round(self.calibrated_ece * 100, 2),
+            "conformal_coverage_pct": round(self.conformal_coverage_pct, 1),
+            "top_shap_drivers": self.top_shap_drivers[:5],
+            "safety_card": self.safety_card,
+        }
+

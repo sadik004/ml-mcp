@@ -15,6 +15,17 @@ This roadmap tracks the development, mathematical hardening, and validation mile
 
 ---
 
+## 🎛️ Unified Phased Master Orchestrators (Production Gateway)
+
+| Master Orchestrator Tool | Layer | Orchestrated Sub-Engines | Invariants & Anti-Overfit Guarantees |
+| :--- | :--- | :--- | :--- |
+| **ml_preflight_audit** | Phase 1: Data Audit & Hygiene | SHA-256 Lineage, DatasetAuditor, TargetLeakageDetector, CollinearityFilter, LabelErrorDetector, ConstraintValidator | Immutable SHA-256 cryptographic fingerprint, normalized PPS (anti-false alarm), VIF < 10, Cleanlab confident learning. |
+| **ml_prepare_feature_pipeline** | Phase 2: Feature Engineering | Temporal Harmonics, Latent Manifold Outliers, Defensive Scaler/Imputer, ClassBalancer, Permutation Selector | Cyclical Fourier sin/cos transforms, isolation manifold L2 distance features, inverse class weights, zero split dilution. |
+| **ml_run_model_tournament** | Phase 3: Model Refinement | 5-Fold Stratified Tournament, Optuna Bayesian Tuner, KISS Stacking Gate | Penalized objective: {val} - \lambda \cdot \max(0, Score_{train} - Score_{val}) - \gamma \cdot \sigma_{CV}$, KISS delta gate >= +0.015. |
+| **ml_certify_safety_and_decisions** | Phase 4: Validation & Safety | Platt/Beta Calibrator, Threshold Optimizer, TreeSHAP Attributions, Conformal Risk Control, OOD Detector | Expected Calibration Error (ECE) reduction, Decision Curve dollar loss optimization for p*, 95% conformal coverage, OOD boundary. |
+
+---
+
 ## 🔬 Peer-Reviewed Frontier Research Integrated (2020–2024 SOTA)
 
 ### Phase 1: Pre-Flight Data Hygiene, Target Leakage, and Multicollinearity
