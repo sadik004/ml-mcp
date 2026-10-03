@@ -140,11 +140,11 @@ All tools are decorated with @mcp.tool(), protected by the Token Shield, and ret
 | # | Tool Identifier | Category | Primary Functionality |
 |---|---|---|---|
 | **1** | ml_ping | **Core** | Server health, Python environment, platform & CUDA GPU detection. |
-| **2** | ml_audit_dataset | **Phase 1: Hygiene** | Pre-flight audit for sentinels (-999, ?), nulls, constant features, duplicates, and class imbalance. |
-| **3** | ml_detect_target_leakage | **Phase 1: Hygiene** | Identifies target leakage, future timestamp features, and perfect predictors. |
-| **4** | ml_check_collinearity | **Phase 1: Hygiene** | Variance Inflation Factor (VIF) and pairwise correlation matrix analysis with competitive drop rule. |
+| **1** | ml_audit_dataset | **Phase 1: Hygiene** | Pre-flight scan: MCAR vs MNAR missingness tests, DataPerf index memorization (NeurIPS 2023), and Benford's law anomaly check. |
+| **2** | ml_detect_target_leakage | **Phase 1: Hygiene** | Target leakage detection via Chatterjee rank correlation xi (JASA 2021), Cramér's V (2023), and PPS decision tree. |
+| **3** | ml_check_collinearity | **Phase 1: Hygiene** | Multicollinearity audit via SVD Spectral Condition Number (Nature MI 2023), Ridge-VIF, and Belsley variance proportions. |
 | **5** | ml_detect_label_errors | **Phase 1: Hygiene** | Detects corrupt/noisy labels via MIT Confident Learning (Northcutt et al., 2021). |
-| **6** | ml_verify_constraints | **Phase 1: Hygiene** | Validates physical limits, non-negativity, and automated Amazon Deequ 3x-IQR statistical outlier rules. |
+| **5** | ml_verify_constraints | **Phase 1: Hygiene** | Validates physical domain rules and Hubert & Vandervieren Medcouple adjusted boxplot bounds on skewed data. |
 | **7** | ml_track_lineage | **Phase 1: Lineage** | Cryptographic artifact & dataset lineage tracking with SHA-256 digests and Git commit hashes. |
 | **8** | ml_handle_text_features | **Phase 2: Features** | Detects free-form natural language text features while filtering UUIDs and random hashes. |
 | **9** | ml_auto_clean_and_pipe | **Phase 2: Features** | Zero-leakage Scikit-Learn ColumnTransformer preprocessing pipeline with median/mode imputers and scalers. |

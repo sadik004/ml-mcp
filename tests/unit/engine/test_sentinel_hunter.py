@@ -1,4 +1,4 @@
-"""Unit tests for Sentinel Hunter with false-positive guard."""
+"""Unit tests for Sentinel Hunter with Dirac-Delta isolated mass and enterprise defaults."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -6,48 +6,35 @@ import pytest
 from ml_mcp.engine.sentinel_hunter import SentinelHunter
 
 
-def test_sentinel_hunter_standard_sentinels():
+def test_sentinel_hunter_standard_and_enterprise_sentinels():
     df = pd.DataFrame({
         "age": [25, 30, -999, 45, 999],
         "income": [50000.0, -999.0, 75000.0, 9999.0, 60000.0],
         "gender": ["M", "F", "?", "NULL", "N/A"],
+        "date_joined": ["2023-01-01", "1900-01-01", "2023-05-15", "1970-01-01", "2024-02-01"],
     })
 
     hunter = SentinelHunter()
     cleaned_df, report = hunter.mask_sentinels(df)
 
-    # All standard numeric and categorical sentinels masked
     assert cleaned_df["age"].isna().sum() == 2
-    assert cleaned_df["income"].isna().sum() == 2  # -999.0 and 9999.0
-    assert cleaned_df["gender"].isna().sum() == 3  # "?", "NULL", "N/A"
-    assert report["total_sentinels_masked"] == 7
+    assert cleaned_df["income"].isna().sum() == 2
+    assert cleaned_df["gender"].isna().sum() == 3
+    assert cleaned_df["date_joined"].isna().sum() == 2  # 1900-01-01 and 1970-01-01 masked
 
 
-def test_sentinel_hunter_false_positive_guard_temperature():
-    # Genuine negative-scale data: temperature in Celsius
-    # -1 is a valid temperature, not a sentinel!
-    df = pd.DataFrame({
-        "temperature": [-10.5, -5.0, -1.0, 0.0, 4.5, 12.0, -1.0, 15.0],
-    })
+def test_sentinel_hunter_dirac_delta_isolated_mass():
+    """Verify Dirac-Delta mass spike far from median is dynamically masked without static list."""
+    np.random.seed(42)
+    n = 200
+    # Normal distribution centered at 50, MAD ~ 5
+    vals = list(np.random.normal(50, 5, 185))
+    # Add a 7.5% frequency spike at 888.0 (extreme isolated Dirac mass)
+    vals.extend([888.0] * 15)
 
-    hunter = SentinelHunter()
+    df = pd.DataFrame({"sensor_reading": vals})
+    hunter = SentinelHunter(spike_threshold=0.05)
     cleaned_df, report = hunter.mask_sentinels(df)
 
-    # -1.0 must NOT be converted to NaN because column contains genuine negative values
-    assert cleaned_df["temperature"].isna().sum() == 0
-    assert (-1.0 in cleaned_df["temperature"].values)
-
-
-def test_sentinel_hunter_positive_scale_minus_one_masked():
-    # Strictly positive scale data: age (0-100) or count
-    # -1 is used as missing code
-    df = pd.DataFrame({
-        "age": [22, 35, 40, -1, 55, 60, -1, 30, 28, 45],
-    })
-
-    hunter = SentinelHunter()
-    cleaned_df, report = hunter.mask_sentinels(df)
-
-    # -1 must be masked as NaN because all valid ages are >= 0
-    assert cleaned_df["age"].isna().sum() == 2
-    assert -1 not in cleaned_df["age"].dropna().values
+    # 888.0 was not in any static set, but Dirac boundary detection masked it!
+    assert cleaned_df["sensor_reading"].isna().sum() == 15

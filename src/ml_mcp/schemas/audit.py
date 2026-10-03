@@ -37,6 +37,12 @@ class AuditReportDTO(BaseDTO):
     recommended_split_strategy: str = Field(
         default="stratified_kfold", description="Recommended CV splitting strategy (stratified, group, time_series, kfold)"
     )
+    missingness_mechanisms: Dict[str, str] = Field(
+        default_factory=dict, description="Missingness mechanism classification (MCAR vs MNAR) per missing column"
+    )
+    benford_anomalies: List[str] = Field(
+        default_factory=list, description="Columns exhibiting significant first-digit deviation from Benford's Law (p < 0.01)"
+    )
     column_details: Dict[str, Any] = Field(
         default_factory=dict, description="Detailed per-column dtypes, cardinality, and skew"
     )
@@ -75,6 +81,12 @@ class TargetLeakageReportDTO(BaseDTO):
     )
     cramers_v_scores: Dict[str, float] = Field(
         default_factory=dict, description="Bias-corrected Cramér's V scores for categorical predictors"
+    )
+    chatterjee_scores: Dict[str, float] = Field(
+        default_factory=dict, description="Chatterjee rank correlation xi scores (JASA 2021)"
+    )
+    pps_scores: Dict[str, float] = Field(
+        default_factory=dict, description="Predictive Power Score single-feature decision tree scores"
     )
     has_critical_leakage: bool = Field(
         default=False, description="True if any feature exceeds leakage threshold"
@@ -217,6 +229,9 @@ class CollinearityReportDTO(BaseDTO):
     vif_scores: Dict[str, float] = Field(default_factory=dict, description="VIF score per feature")
     high_vif_features: List[str] = Field(default_factory=list, description="Features exceeding VIF threshold")
     collinear_pairs: List[Dict[str, Any]] = Field(default_factory=list, description="Pairwise collinear candidates")
+    variance_decomposition: Optional[Dict[str, Any]] = Field(
+        default=None, description="Belsley variance decomposition proportions table and condition indices"
+    )
     dropped_features: List[str] = Field(default_factory=list, description="Features pruned to eliminate collinearity")
     remaining_features_count: int = Field(ge=0, description="Count of retained features")
     selection_metric: str = Field(default="competitive", description="Signal metric used for feature survival")

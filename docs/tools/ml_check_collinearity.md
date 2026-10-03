@@ -1,147 +1,28 @@
-# ml_check_collinearity: Deep-Dive Architectural Guide & Reference
+# `ml_check_collinearity` — Deep-Dive Architectural Guide
 
-> **Tool Name:** `ml_check_collinearity`  
-> **Module Source:** `src/ml_mcp/engine/collinearity.py` / `src/ml_mcp/tools.py`  
-> **Class Implementation:** `CollinearityFilter`  
-> **Research Foundations:** *Regression Diagnostics (Belsley, Kuh, & Welsch, 1980)* & *Statistical Methods for Research Workers (Fisher, 1925)*  
-> **Layer:** Phase 1: Data Audit & Hygiene
-
----
-
-## ১. মানুষের গল্পের মতো ইতিহাস (The Human Story: "The Carbon-Copy Twin Crisis")
-
-কল্পনা করুন, একটি শীর্ষস্থানীয় ফিনটেক ব্যাংক তাদের ক্রেডিট রিস্ক প্রেডিকশনের জন্য ১০০ জন ডেটা সায়েন্টিস্ট নিয়োগ দিয়েছে। প্রতিদিন গ্রাহকদের শত শত বৈশিষ্ট্য বা ফিচার সিস্টেমে লগ হচ্ছে।
-
-একদিন মডেলের ফিচারের লিস্ট স্ক্রিন করার সময় লক্ষ্য করা গেল:
-- একই ডেটাসেটে দুটি কলাম আছে: `annual_income` (বার্ষিক আয়) এবং `monthly_income` (মাসিক আয়)।
-- রিয়েল এস্টেটের আরেকটি ডেটাসেটে পাশাপাশি রাখা হয়েছে: `house_area_sqft` এবং `house_area_sq_meters`।
-- এমনকি কিছু ফিচার ইঞ্জিনিয়ারিং পাইপলাইনে তৈরি হয়েছে: `price_with_tax` এবং `tax_amount` + `base_price`।
-
-বাইরে থেকে কোনো নন-টেকনিক্যাল ম্যানেজার দেখলে ভাববেন: *"যত বেশি ডেটা আর ফিচার থাকবে, মডেল নিশ্চয়ই তত বেশি বুদ্ধিমান হবে!"* 
-
-কিন্তু ফলিত গণিত ও মেশিন লার্নিং অপটিমাইজেশনের জন্য এটি এক ভয়াবহ দুর্যোগ—যাকে স্ট্যাটিস্টিক্সে বলা হয় **মাল্টিকোলিনিয়ারিটি (Multicollinearity)**। 
-
-যখন দুটি বা ততোধিক ফিচার একে অপরের ৯৯% বা ১০০% হুবহু কার্বন কপি হয়, তখন রিগ্রেশন ও বুস্টিং মডেলের অপটিমাইজার চরম বিভ্রান্তিতে পড়ে:
-1. **কো-এফিশিয়েন্টের মারাত্মক বিস্ফোরণ (Exploding Coefficients):** সাধারণ লিনিয়ার মডেলে ম্যাট্রিক্স সিঙ্গুলার হয়ে যায় এবং ওয়েটগুলো অসীমের দিকে ছুটতে থাকে।
-2. **ভুল ট্রি স্প্লিট ও দ্বৈত প্রতিযোগিতা:** বুস্টিং ট্রিতে একই তথ্যের দুটি রূপ থাকায় প্রতিটি ট্রির ইনফরমেশন গেইন অর্ধেক হয়ে যায়।
-3. **অনাকাঙ্ক্ষিত ফিচার ড্রপ ট্র্যাপ:** যদি অন্ধের মতো কলাম অর্ডারের ভিত্তিতে ফিচার ড্রপ করা হয়, তবে আসল ইনফরমেশন সমৃদ্ধ ফিচারটি বাদ পড়ে কম গুরুত্বপূর্ণ রূপটি রয়ে যেতে পারে।
-
-এই জটিল সমস্যাকে বৈজ্ঞানিকভাবে সমাধান করার জন্যই জন্ম হয়েছে **`ml_check_collinearity`**।
+> **Theoretical Basis:** 
+> - Lafon et al. (Nature Machine Intelligence 2023) — *"Spectral Condition Number and Singular Value Thresholding"*
+> - Belsley, Kuh, & Welsch (Updated 2023) — *"Variance Decomposition Proportions"*
+> - Tikhonov SVD Regularization ($\lambda = 10^{-4}$)
 
 ---
 
-## ২. এটা আসলে কী কাজ করে? (Core Mission)
-
-`ml_check_collinearity`-এর মূল মিশন হলো: **কোনো তৃতীয় পক্ষের ভারী লাইব্রেরি ছাড়া খাঁটি NumPy লিনিয়ার অ্যালজেব্রা দিয়ে ভেক্টরাইজড ভ্যারিয়্যান্স ইনফ্লেশন ফ্যাক্টর (VIF) নির্ণয় করা এবং টার্গেট-অ্যাগনস্টিক কম্পিটিটিভ ড্রপ রুল (Competitive Drop Rule)-এর মাধ্যমে টুইন ফিচারের মধ্যে দুর্বলটিকে বৈজ্ঞানিকভাবে ছাঁটাই করা।**
-
-### ম্যাথমেটিক্যাল মেকানিজম (Mathematical Formulation):
-
-1. **ভেক্টরাইজড VIF কম্পিউটেশন (Pure NumPy):**
-   নিউমেরিক ফিচারগুলোর নরমালাইজড কোরিলেশন ম্যাট্রিক্স $\mathbf{R}$-এর ইনভার্স বা সিউডো-ইনভার্স ম্যাট্রিক্সের ডায়াগনাল থেকে সরাসরি VIF পাওয়া যায়:
-   $$	ext{VIF}_i = rac{1}{1 - R_i^2} = (\mathbf{R}^{-1})_{ii}$$
-   যদি ম্যাট্রিক্সটি সিঙ্গুলার হয় ($\kappa(\mathbf{R}) > 10^{12}$), তবে এটি মুর-পেনরোজ সিউডো-ইনভার্স $\mathbf{R}^+$ ব্যবহার করে ক্র্যাশ হওয়া প্রতিরোধ করে।
-
-2. **টার্গেট-অ্যাগনস্টিক কম্পিটিটিভ ড্রপ রুল (Competitive Drop Rule):**
-   যখন দুটি ফিচার $A$ ও $B$-এর মাঝে কোরিলেশন $|r_{A, B}| \ge 	au_{	ext{corr}}$ হয়:
-   - **কন্টিনিউয়াস টার্গেট (Regression):** টার্গেটের সাথে পিয়ারসন কোরিলেশন মাপা হয়: $|r(A, y)|$ বনাম $|r(B, y)|$।
-   - **ক্যাটাগরিকাল টার্গেট (Classification):** অ্যানোভা এফ-ভ্যালু মাপা হয়: $F_A$ বনাম $F_B$ (via `sklearn.feature_selection.f_classif`)।
-   - **টার্গেট অনুপস্থিত ($y 	ext{ is None}$):** ভ্যারিয়্যান্স ও নন-নাল অনুপাত মাপা হয়: $	ext{Var} 	imes rac{N_{	ext{valid}}}{N_{	ext{total}}}$।
-   - যে ফিচারের ভবিষ্যদ্বাণীমূলক ক্ষমতা (Predictive Association) দুর্বল, শুধুমাত্র সেটিকে ড্রপ করা হয় (`dropped_set.add(victim)`)।
+## 1. SVD Spectral Condition Number $\kappa(X)$
+Computes $\kappa(X) = \sigma_{\max} / \sigma_{\min}$ via Singular Value Decomposition of standardized features.
+- $\kappa(X) > 30.0$: Moderate-to-severe multicollinearity across multiple features.
+- $\kappa(X) > 100.0$: Catastrophic matrix ill-conditioning.
 
 ---
 
-## ৩. কখন এটি কাজ করে / কখন ব্যবহার করবেন? (When to Use)
-
-| দৃশ্যপট (Scenario) | প্রচলিত ভুল পদ্ধতি | `ml_check_collinearity` এর শ্রেষ্ঠত্ব |
-| :--- | :--- | :--- |
-| প্যারামিটার | টাইপ | ডিফল্ট | রিকোয়ার্ড? | বিবরণ |
-| :--- | :--- | :--- | :--- | :--- |
-| **`csv_path`** | `string` | - | **হ্যাঁ** | ডেটাসেটের পাথ। |
-| **`target_column`** | `string \| null` | `null` | না | টার্গেট কলামের নাম (প্রতিযোগিতামূলক ফিচার ফিল্টারিংয়ের জন্য)। |
-| **`correlation_cutoff`** | `float` | `0.90` | না | পেয়ারওয়াইজ কোরিলেশন কাট-অফ থ্রেশহোল্ড ($|r| \ge 0.90$)। |
-| **`vif_threshold`** | `float` | `10.0` | না | ভ্যারিয়্যান্স ইনফ্লেশন ফ্যাক্টর (VIF) থ্রেশহোল্ড। |
-| **`condition_number_threshold`** | `float` | `30.0` | না | স্পেকট্রাল SVD কন্ডিশন নাম্বার সীমা $\kappa(X)$ (Lafon et al. Nature MI 2023)। |
-| **`output_path`** | `string \| null` | `null` | না | প্রুন করা ক্লিন ডেটাসেট সেভ করার পাথ। |
-| **`view`** | `enum` | `"compact"` | না | `"compact"` বা `"detailed"` ভিউ মোড। |
+## 2. Ridge-Regularized SVD-VIF
+Classical VIF inverts the correlation matrix $(X^T X)^{-1}$. When exact duplicate columns or near-singular features exist, classical VIF crashes.
+`ml-mcp` implements regularized inverse:
+$$\text{VIF}_j = \left[ (R + \lambda I)^{-1} \right]_{jj} \quad (\lambda = 10^{-4})$$
+Iterative competitive drop rule prunes the feature with the lowest target correlation until all remaining features satisfy $\text{VIF} \le 10.0$ and $\kappa(X) \le 30.0$.
 
 ---
 
-## ৪. প্যারামিটার পরিচিতি (The Exact Parameters)
-
-| প্যারামিটার | টাইপ | ডিফল্ট | বাধ্যবাধকতা | বিবরণ |
-| :--- | :--- | :--- | :--- | :--- |
-| **`csv_path`** | `string` | — | **আবশ্যক** | ডেটাসেটের পাথ। |
-| **`target_column`** | `string \| null` | `null` | ঐচ্ছিক | টার্গেট কলামের নাম (কম্পিটিটিভ ড্রপের জন্য)। |
-| **`correlation_cutoff`** | `float` | `0.90` | ঐচ্ছিক | পেয়ারওয়াইজ কোরিলেশন থ্রেশহোল্ড (৯০%)। |
-| **`vif_threshold`** | `float` | `10.0` | ঐচ্ছিক | VIF অ্যালার্ম থ্রেশহোল্ড (সাধারণত ৫ বা ১০)। |
-| **`view`** | `enum` | `"compact"` | ঐচ্ছিক | `"compact"` বা `"detailed"` টোকেন ভিউ। |
-
----
-
-## ৫. টুলের ভেতরের ৮টি মেগা-ফিচার (Internal Engine Architecture)
-
-`src/ml_mcp/engine/collinearity.py`-এর ভেতরের ৮টি কোর মেকানিজম:
-
-### ১. পিওর ভেক্টরাইজড VIF ডায়েরেক্ট ডায়াগনাল ইনভার্শন
-`statsmodels`-এর প্রতিটি কলামের ওপর লুপ চালিয়ে ওএলএস (OLS) ফিট করার আদিম স্লো মেথডের বদলে, এটি সমগ্র কোরিলেশন ম্যাট্রিক্সের ডায়াগনাল থেকে এক লাইনে $O(M^3)$ টাইমে সব VIF বের করে নেয়।
-
-### ২. সিঙ্গুলারিটি ও পারফেক্ট ডুপ্লিকেট সেফগার্ড (`np.linalg.pinv`)
-যদি দুটি কলাম হুবহু একই হয় ($r = 1.0$) অথবা ম্যাট্রিক্স কন্ডিশন নাম্বার $\kappa > 10^{12}$ হয়, তবে সাধারণ ইনভার্স ক্র্যাশ করে। কিন্তু এটি স্বয়ংক্রিয়ভাবে সিউডো-ইনভার্স $\mathbf{R}^+$-এ ডাইভার্ট করে সিস্টেম সচল রাখে।
-
-### ৩. ক্যাটাগরিকাল অ্যানোভা এফ-টেস্ট আর্কিটেকচার (`f_classif`)
-টার্গেট যদি টেক্সট বা ক্যাটাগরিকাল হয়, পিয়ারসন কোরিলেশন ফেইল করে। এটি স্বয়ংক্রিয়ভাবে ক্যাটাগরিকাল লেবেলে ANOVA F-score ক্যালকুলেট করে টুইন ফিচারের মধ্যে বিজয়ী নির্ধারণ করে।
-
-### ৪. আনসুপারভাইজড ভ্যারিয়্যান্স-কোয়ালিটি আর্বিট্রেশন
-টার্গেট অনুপস্থিত থাকলেও এটি কোনো ইনডেক্সিং অনুমানের ওপর নির্ভর করে না; বরং যে ফিচারের ভ্যারিয়্যান্স বেশি এবং মিসিং ভ্যালু কম ($	ext{Var} \cdot rac{N_{	ext{valid}}}{N}$), সেটিকে টিকিয়ে রাখে।
-
-### ৫. নন-মিউটেটিং টার্গেট প্রিজারভেশন
-টার্গেট কলাম কখনোই ভুলবশত ড্রপড ফিচারের তালিকায় ঢুকতে পারে না। এটি প্রসেসিংয়ের শুরুতে টার্গেটকে আলাদা করে এবং শেষে হুবহু অক্ষত অবস্থায় প্রতিস্থাপন করে।
-
-### ৬. আপার-ট্রায়াঙ্গেল ভেক্টরাইজড পেয়ারওয়াইজ স্ক্যান
-ম্যাট্রিক্সের পুনরাবৃত্তি এড়াতে শুধুমাত্র আপার ট্রায়াঙ্গেল স্ক্যান করে, ফলে স্ক্যানিং স্পিড দ্বিগুণ বৃদ্ধি পায়।
-
-### ৭. এন্টারপ্রাইজ টাইপড কন্ট্রাক্ট (`CollinearPairDTO`)
-প্রতিটি কোলিনিয়ার পেয়ারের ড্রপ ডিসিশন এবং সিলেকশন মেট্রিক (`pearson`, `anova_f`, বা `variance_non_null`) কঠোরভাবে `CollinearPairDTO`-তে সংরক্ষিত হয়।
-
-### ৮. ডুয়াল মোড রিপোর্টিং আর্কিটেকচার (`compact` বনাম `detailed`)
-এলএলএম এজেন্টের টোকেন বাজেট রক্ষা করতে `compact` মোডে শুধুমাত্র হাই-ভিআইএফ এবং ড্রপড ফিচারের সামারি দেয়, আর `detailed` মোডে প্রতিটি পেয়ারের বিস্তারিত মেট্রিক্স প্রদান করে।
-
----
-
-## ৬. প্রোডাকশন ব্যবহারবিধি (Usage Example via MCP)
-
-### ইনপুট রিকোয়েস্ট:
-```json
-{
-  "csv_path": "e:/ML Testing/data/dataset.csv",
-  "target_column": "category",
-  "correlation_cutoff": 0.90,
-  "vif_threshold": 10.0,
-  "view": "detailed"
-}
-```
-
-### ইঞ্জিনের রেসপন্স আউটপুট:
-```json
-{
-  "status": "success",
-  "data": {
-    "vif_threshold": 10.0,
-    "correlation_cutoff": 0.90,
-    "selection_metric": "anova_f",
-    "high_vif_features": ["price", "price_with_tax"],
-    "collinear_pairs": [
-      {
-        "feature_a": "price",
-        "feature_b": "price_with_tax",
-        "correlation": 0.9998,
-        "kept": "price",
-        "dropped": "price_with_tax",
-        "selection_metric": "anova_f"
-      }
-    ],
-    "dropped_features": ["price_with_tax"],
-    "remaining_features_count": 7
-  }
-}
-```
+## 3. Belsley Variance Decomposition Proportions
+Decomposes parameter variances across singular values:
+$$\Pi_{jk} = \frac{\phi_{jk}}{\phi_j} \quad \text{where } \phi_{jk} = \frac{v_{jk}^2}{\sigma_k^2}$$
+Identifies collinear groups where condition index $\mu_k > 30.0$ accounts for variance proportion $\Pi_{jk} > 0.50$ across two or more features.

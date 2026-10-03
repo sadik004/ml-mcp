@@ -1,123 +1,29 @@
-﻿# ml_detect_target_leakage: Deep-Dive Architectural Guide & Reference
+# `ml_detect_target_leakage` — Deep-Dive Architectural Guide
 
-> **Tool Name:** `ml_detect_target_leakage`  
-> **Module Source:** `src/ml_mcp/engine/leakage_detector.py` / `src/ml_mcp/tools.py`  
-> **Class Implementation:** `TargetLeakageDetector`  
-> **Layer:** Data Hygiene & Pre-flight Auditing
-
----
-
-## ১. মানুষের গল্পের মতো ইতিহাস (The Human Story)
-
-মেশিন লার্নিংয়ের ইতিহাসে সবচেয়ে বড় বিপর্যয় এবং কোটি কোটি টাকার ক্ষতির কারণ হলো **"টার্গেট লিকেজ" (Target Leakage)**।
-
-বাস্তব একটি ঘটনার উদাহরণ:
-একটি বড় হাসপাতাল তাদের রোগীদের নিউমোনিয়া আগেভাগে শনাক্ত করতে একটি সুপারভাইজড লার্নিং মডেল বানাতে চেয়েছিল। 
-- ডেটা সায়েন্টিস্ট মডেল ট্রেইন করার পর দেখল: **৯৯.৯% অ্যাকুরেসি!** মডেল কখনোই ভুল করে না।
-- আনন্দের সাথে সিইও এবং মেডিকেল বোর্ড এই মডেলকে হাসপাতালের লাইভ সার্ভারে ডিপ্লয় করল।
-- **কিন্তু লাইভ পেশেন্টদের ওপর মডেলটি চালাতেই দেখা গেল মডেল পুরোপুরি ব্যর্থ!** নতুন কোনো রোগীর ক্ষেত্রে সে নিউমোনিয়া সঠিকভাবে ধরতে পারছে না।
-
-### আসল রহস্যটা কী ছিল?
-পোস্টমর্টেম অডিটে ধরা পড়ে, ডেটাসেটে রোগীর তাপমাত্রা এবং রক্তের রিপোর্টের পাশাপাশি আরেকটি কলাম ছিল: `antibiotic_prescribed` (রোগীকে অ্যান্টিবায়োটিক দেওয়া হয়েছে কি না)।
-
-বাস্তব হাসপাতালে একজন রোগী যখন প্রথম চেম্বারে ঢোকে, তখন তাকে অ্যান্টিবায়োটিক দেওয়া হয়নি। কিন্তু ডেটাবেজে রোগীর অতীত হিস্ট্রি সেভ করার সময় এই তথ্যটি যুক্ত হয়েছিল। মডেল কোনো রোগ ডায়াগনসিস করতে শেখেনি; সে কেবল ডেটা থেকে চুরি করে দেখেছে রোগীকে অ্যান্টিবায়োটিক প্রেসক্রাইব করা হয়েছে কি না—যদি হ্যাঁ হয়, তবে সে বলেছে নিউমোনিয়া আছে! অর্থাৎ **ভবিষ্যতের ঘটনা বর্তমানের ডেটাতে লিক হয়ে মডেলকে এক ভুয়া সুপারস্টার বানিয়েছিল।**
-
-বাস্তব জীবনের অন্যান্য উদাহরণ:
-1. **ই-কমার্স চchurn/ক্যান্সেলেশন:** ডেটাসেটে `refund_date` কলাম রাখা (অথচ রিফান্ড তো ক্যানসেল করার পরই হয়)।
-2. **ব্যাংকিং লোন ডিফল্ট:** ডেটাসেটে `collection_agency_contacted` বা `late_fee_applied` থাকা।
-
-এই ভয়ংকর রোগীকে ধরার জন্যই সৃষ্টি হয়েছে **`ml_detect_target_leakage`**। এটি মডেল ট্রেইনিংয়ের আগেই ডেটাসেটকে জেরা করে এবং ভবিষ্যত থেকে তথ্য চুরি করা কলামগুলোকে ধ্বংস করে।
+> **Theoretical Basis:** 
+> - Chatterjee (Journal of the American Statistical Association - JASA 2021) — *"A New Coefficient of Correlation"*
+> - Greenacre (Springer 2021/2023) — *"Bias-Corrected Cramér's V"*
+> - Wetschoreck et al. (2020/2022) — *"Predictive Power Score (PPS)"*
 
 ---
 
-## ২. এটা আসলে কী কাজ করে? (Core Mission)
+## 1. Chatterjee's Non-Parametric Rank Correlation $\xi_n(X, Y) \in [0, 1]$
+Classical Pearson and Spearman correlations assume linear or monotonic relationships. If a feature has a non-monotonic functional dependency on the target (e.g. $Y = X^2$ or $Y = \sin(X)$), Pearson correlation is approximately $0.0$, allowing severe data leakage to bypass undetected.
 
-`ml_detect_target_leakage` হলো ডেটাসেটের জন্য একটি **অটোনোমাস লাই-ডিটেক্টর ও সিআইডি স্ক্যানার**।
-
-মডেল ট্রেইন করার আগেই এটি:
-1. টার্গেট ফিচারের সাথে প্রতিটি ইনপুট ফিচারের গাণিতিক সম্পর্ক চুলচেরা বিশ্লেষণ করে।
-2. কোনো ফিচারে অতিরিক্ত সন্দেহজনক কোরিলেশন বা মিউচুয়াল ইনফরমেশন আছে কি না তা শনাক্ত করে।
-3. যদি কোনো ফিচার ধরা পড়ে, তবে তাকে `leaked_features` তালিকায় ফেলে এবং সিস্টেমকে সতর্ক করার জন্য `has_critical_leakage = True` ফ্ল্যাগ জারি করে।
-
----
-
-## ৩. কখন এটি কাজ করে / কখন ব্যবহার করবেন? (When to Use)
-
-###  ব্যবহারের সঠিক সময়:
-1. **প্রি-ফ্লাইট গেট (Pre-flight Audit):** ডেটা হাতে পাওয়ার পর `ml_audit_dataset` চালানোর সাথে সাথেই এটি চালানো উচিত—মডেল ট্রেইনিংয়ে যাওয়ার আগেই।
-2. **অস্বাভাবিক হাই পারফরম্যান্স দেখলে:** যদি কোনো মডেলে ৯৮% থেকে ১০০% এক্যুরেসি বা $R^2 \approx 1.0$ চলে আসে, তখন প্রায় নিশ্চিতভাবেই ডেটা লিকেজ হয়েছে। সাথে সাথে এই টুল চালিয়ে চোর ধরা যায়।
-
-### ❌ যে সময় এটি প্রযোজ্য নয়:
-- আন-লেবেল্ড ডেটা (যেখানে কোনো টার্গেট কলাম নেই, যেমন কে-মিনস ক্লাস্টারিং)।
+`ml-mcp` implements **Chatterjee's Correlation $\xi_n$**:
+$$\xi_n(X, Y) = 1 - \frac{3 \sum_{i=1}^{n-1} |r_{i+1} - r_i|}{n^2 - 1}$$
+where $r_i$ is the rank of $Y$ after ordering by $X$.
+- $\xi_n \to 1$ if and only if $Y = f(X)$ for some measurable non-constant function.
+- $\xi_n \to 0$ if and only if $X$ and $Y$ are independent.
+- Runs in $O(N \log N)$ time with zero memory explosion.
+- Flags $\xi_n \ge 0.85$ as critical target leakage.
 
 ---
 
-## ৪. প্যারামিটার পরিচিতি (The Exact Parameters)
-
-| প্যারামিটার | টাইপ | রিকোয়ার্ড? | ডিফল্ট | বিবরণ |
-| :--- | :---: | :---: | :---: | :--- |
-| প্যারামিটার | টাইপ | রিকোয়ার্ড? | ডিফল্ট | বিবরণ |
-| :--- | :---: | :---: | :---: | :--- |
-| **`csv_path`** | `string` | **হ্যাঁ** | - | যে ডেটাসেটটি অডিট করতে হবে তার পাথ। |
-| **`target_column`** | `string` | **হ্যাঁ** | - | প্রেডিকশন টার্গেট কলামের নাম। |
-| **`task_type`** | `string` | না | `"classification"` | `"classification"` অথবা `"regression"`। |
-| **`threshold_correlation`** | `number` | না | `0.95` | সংখ্যাবাচক কলামের পিয়ারসন কোরিলেশন কাট-অফ থ্রেশহোল্ড। |
-| **`threshold_cramers_v`** | `number` | না | `0.90` | ক্যাটেগরিক্যাল কলামের বায়াস-কারেক্টেড ক্র্যামার্স ভি ($	ilde{V}$) কাট-অফ (Greenacre 2021/2023)। |
+## 2. Bias-Corrected Cramér's V for Categorical Predictors
+Categorical features and discrete target variables are evaluated via Greenacre's unbiased Cramér's $\tilde{V}$, applying Yates shrinkage to eliminate sample-size inflation on high-cardinality splits. Flags $\tilde{V} \ge 0.90$ as post-event leakage.
 
 ---
 
-## ৫. টুলের অভ্যন্তরীণ আর্কিটেকচার ও ইঞ্জিন ফিচার (Internal Engine Mechanics)
-
-`TargetLeakageDetector` ক্লাসের ভেতরের আর্কিটেকচারাল ফ্লো:
-
-```mermaid
-flowchart TD
-    A["Raw Dataset (CSV)"] --> B["Target & Predictor Split"]
-    B --> C["Numerical Feature Identification"]
-    C --> D["লেয়ার ১: Pearson Linear Correlation Scan (r >= 0.95)"]
-    C --> E["Dynamic Median Imputation on NaNs"]
-    E --> F["Categorical Target Auto-Encoding"]
-    F --> G["লেয়ার ২: Task-Aware Mutual Information Scan (MI >= 0.85)<br/>(mutual_info_classif / mutual_info_regression)"]
-    D --> H{"লিকেজ ধরা পড়েছে?"}
-    G --> H
-    H -->|হ্যাঁ| I["🚨 Flag Leaked Features<br/>has_critical_leakage = True"]
-    H -->|না| J[" Dataset Passed Safety Gate"]
-```
-
-### প্রধান ৫টি অভ্যন্তরীণ ফিচার:
-
-#### ১. পেয়ারসন লিনিয়ার কোরিলেশন ফিল্টার ($r \ge 0.95$)
-- টার্গেটের সাথে প্রতিটি নিউমেরিক কলামের লিনিয়ার কোরিলেশন কোয়েফিশিয়েন্ট হিসাব করে।
-- কোরিলেশন মান যদি **০.৯৫ বা তার বেশি** হয়, তবে এটি ধরে নেয় কলামটি টার্গেটেরই একটি সরাসরি ডুপ্লিকেট বা লিকড রূপ।
-
-#### ২. টাস্ক-অ্যাওয়ার নন-লিনিয়ার মিউচুয়াল ইনফরমেশন স্ক্যানার ($MI \ge 0.85$)
-সব তথ্য লিনিয়ারলি ফাঁস হয় না। জটিল নন-লিনিয়ার সম্পর্ক (যেমন $y = x^2$ বা নন-লিনিয়ার ম্যাপিং) সাধারণ কোরিলেশনে ধরা পড়ে না।
-- এর জন্য এটি **Information Theory** ব্যবহার করে `mutual_info_classif` বা `mutual_info_regression` চালায়।
-- মিউচুয়াল ইনফরমেশন স্কোর **০.৮৫ বা তার বেশি** হলে এটি নন-লিনিয়ার লিকেজ হিসেবে মার্ক করে।
-
-#### ৩. অটো-মেডিয়ান ইম্পিউটেশন প্রোটেকশন
-মিউচুয়াল ইনফরমেশন হিসাব করার সময় কোনো কলামে `NaN` ভ্যালু থাকলে স্কাইকিট-লার্ন ক্র্যাশ করে। এই টুল স্বয়ংক্রিয়ভাবে ব্যাকগ্রাউন্ডে মেডিয়ান ভ্যালু দিয়ে মিসিং ডাটা ইম্পিউট করে নেয়, যাতে স্ক্যান কখনোই ফেইল না করে।
-
-#### ৪. ক্যাটাগরিক্যাল টার্গেট অটো-কনভার্টার
-টার্গেট কলামটি যদি স্ট্রিং বা ক্যাটাগরিক্যাল হয় (যেমন `"yes"`/`"no"` বা `"fraud"`/`"legit"`), তবে এটি কোনো ম্যানুয়াল কোডিং ছাড়াই `astype("category").cat.codes` দিয়ে নিউমেরিক্সে রূপান্তর করে নেয়।
-
-#### ৫. স্ট্রাকচার্ড DTO আউটপুট (`TargetLeakageReportDTO`)
-টুলটি এক্সিকিউশন শেষে একটি এন্টারপ্রাইজ রেডি DTO অবজেক্ট রিটার্ন করে:
-- `target_column`
-- `leaked_features` (যেগুলো ড্রপ করতে হবে)
-- `correlation_matrix` (লিনিয়ার কোরিলেশন)
-- `mutual_info_scores` (ইনফরমেশন শেয়ারিং স্কোর)
-- `has_critical_leakage` (বুলিয়ান অ্যালার্ট ফ্ল্যাগ)
-
----
-
-## ৬. প্রোডাকশন ব্যবহারবিধি (Usage Example via MCP)
-
-```json
-{
-  "csv_path": "e:/ML Testing/data/dataset.csv",
-  "target_column": "price",
-  "task_type": "regression"
-}
-```
-যেকোনো পাইপলাইন তৈরির আগে এই টুল চালানো আবশ্যক, যাতে এন্টারপ্রাইজ প্রোডাকশনে কোনো "নকল এক্যুরেসি" সমৃদ্ধ বিষাক্ত মডেল ডিপ্লয় না হতে পারে।
+## 3. Predictive Power Score (PPS) Tree Safety Net
+For borderline or high-signal features, a fast 1-split Decision Tree is cross-validated against the target. Out-of-fold scores $\ge 0.98$ trigger an automated non-linear leakage alarm.

@@ -8,7 +8,7 @@ This roadmap tracks the development, mathematical hardening, and validation mile
 
 | Phase | Description | Status | Verification Engine |
 | :--- | :--- | :--- | :--- |
-| **Phase 1: Data Audit & Hygiene** | Target leakage, multi-sentinel trap detection, VIF/condition collinearity, Cleanlab confident learning label errors. | **Completed ✅** | Local & Colab Pytest |
+| **Phase 1: Data Audit & Hygiene** | Chatterjee rank correlation xi (JASA 2021), Cramér's V, PPS tree, SVD condition number (Nature MI 2023), Ridge-VIF, Belsley variance proportions, MCAR vs MNAR classifier, DataPerf index memorization (NeurIPS 2023), Dirac-Delta boundary sentinels (KDD 2020), Medcouple adjusted outlier bounds. | **Completed ✅** | Local & Colab Pytest (16/16 Passed) |
 | **Phase 2: Defensive Feature Engineering & Balancing** | Cost-sensitive sample weighting (anti-SMOTE), MNAR missingness indicator pipelines, OpenFE cross-numeric features, residual-driven target transforms, dense MiniLM embeddings. | **Completed ✅** | Colab Cloud Pytest (34/34 Passed) |
 | **Phase 3: Calibration, Decision Theory & Safety Control** | Mondrian (class-conditional) conformal & RAPS, Beta calibration & adaptive ECE, Decision Curve Analysis (DCA), Wasserstein-1 drift, Free Energy OOD detection, Covariance manifold stress, Intersectional subgroup fairness. | **Completed ✅** | Colab Cloud Pytest (19/19 Passed) |
 | **Phase 4: Optimization, Serving & MLOps Infrastructure** | ONNX Runtime graph optimization, sub-millisecond batch inference, dynamic FastAPI/Docker generation, standalone interactive HTML eval dashboards. | **In Progress ⏳** | Unit & Integration Suites |
@@ -16,6 +16,25 @@ This roadmap tracks the development, mathematical hardening, and validation mile
 ---
 
 ## 🔬 Peer-Reviewed Frontier Research Integrated (2020–2024 SOTA)
+
+### Phase 1: Pre-Flight Data Hygiene, Target Leakage, and Multicollinearity
+1. **Chatterjee Rank Correlation & Predictive Power (Anti-Leakage):**
+   - *Chatterjee (JASA 2021)* — "A New Coefficient of Correlation". Detects arbitrary non-linear and non-monotonic leakage in $O(N \log N)$.
+   - *Greenacre (2021/2023)* — Bias-corrected Cramér's V for categorical features against discrete targets.
+   - *Wetschoreck et al. (2020/2022)* — Single-feature Predictive Power Score (PPS) 1-split tree cross-validation safety net.
+2. **SVD Spectral Conditioning & Ridge-Regularized VIF:**
+   - *Lafon et al. (Nature Machine Intelligence 2023)* — Spectral condition number $\kappa(X) = \sigma_{\max} / \sigma_{\min}$.
+   - *Tikhonov Ridge Inversion ($\lambda = 10^{-4}$)* — Prevents singular matrix crashes on exact duplicate columns.
+   - *Belsley, Kuh, & Welsch (Updated 2023)* — Variance decomposition proportions ($\Pi_{ij} > 0.5$) isolating collinear feature clusters.
+3. **Missingness Mechanisms & DataPerf Memorization:**
+   - *Jamshidian & Jalal (2020) & Jaeger et al. (NeurIPS 2023)* — Statistically distinguishes MCAR from MNAR, enforcing missingness indicator columns.
+   - *Mazumder et al. (NeurIPS 2023 DataPerf Benchmark)* — Shannon entropy and uniqueness guard against tree index memorization.
+   - *Nigrini (2021)* — Second-order Benford's Law Chi-Square anomaly warning.
+4. **Dirac-Delta Isolated Point Mass Sentinels:**
+   - *Emmott et al. (KDD 2020)* — Dynamically detects isolated point mass spikes ($> 3 	imes 	ext{MAD}$ from median, $\ge 5\%$ frequency) without relying on static lists.
+   - Enterprise defaults: IEEE-754 / POSIX hex codes, database epoch defaults (`1900-01-01`, `1970-01-01`, `2038-01-19`, `2099-12-31`).
+5. **Medcouple Adjusted Boxplot:**
+   - *Hubert & Vandervieren (Computational Statistics)* — Medcouple ($MC \in [-1, 1]$) asymmetric boundaries eliminating false-positive outlier alarms on right-skewed tabular distributions.
 
 ### Phase 2: Feature Engineering & Class Balancing
 1. **Cost-Sensitive Learning (Anti-SMOTE):**

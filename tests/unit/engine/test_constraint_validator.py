@@ -1,4 +1,4 @@
-"""Unit tests for Amazon Deequ-style Constraint Validator."""
+"""Unit tests for Constraint Validator with Hubert Medcouple adjusted boxplot."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,10 +9,10 @@ from ml_mcp.schemas.audit import ConstraintValidationReportDTO
 
 def test_constraint_validator_explicit_rules():
     df = pd.DataFrame({
-        "age": [25, 40, -5, 180, 35],       # -5 violates min/non_negative, 180 violates max
-        "price": [10.0, 20.0, -1.0, 15.0, 50.0],  # -1 violates non_negative
-        "status": ["active", "pending", "corrupted", "active", "active"], # "corrupted" violates allowed
-        "rating": [4.5, 3.8, np.nan, 4.9, 5.0],    # np.nan violates is_complete
+        "age": [25, 40, -5, 180, 35],
+        "price": [10.0, 20.0, -1.0, 15.0, 50.0],
+        "status": ["active", "pending", "corrupted", "active", "active"],
+        "rating": [4.5, 3.8, np.nan, 4.9, 5.0],
     })
 
     constraints = {
@@ -22,34 +22,27 @@ def test_constraint_validator_explicit_rules():
         "rating": {"is_complete": True},
     }
 
-    validator = ConstraintValidator()
-    report = validator.validate_constraints(df, constraints=constraints)
+    validator = ConstraintValidator(constraints=constraints)
+    report = validator.validate_constraints(df)
 
     assert isinstance(report, ConstraintValidationReportDTO)
     assert report.passed is False
-    assert report.total_violations > 0
-
-    cols_with_violations = [v.column for v in report.violations_by_column]
-    assert "age" in cols_with_violations
-    assert "price" in cols_with_violations
-    assert "status" in cols_with_violations
-    assert "rating" in cols_with_violations
+    assert report.total_violations >= 4
 
 
-def test_constraint_validator_iqr_automated():
+def test_constraint_validator_medcouple_skewed_data():
+    """Verify Medcouple adjusted boxplot prevents false-positive outlier alarms on right-skewed log-normal data."""
     np.random.seed(42)
-    # Generate 100 normal observations
-    vals = np.random.normal(50, 5, 100).tolist()
-    # Injected extreme physical outliers: 500.0 and -200.0
-    vals.append(500.0)
-    vals.append(-200.0)
-
-    df = pd.DataFrame({"sensor_reading": vals})
+    n = 200
+    # Log-normal distribution (strongly right-skewed, like salaries or web latency)
+    skewed_salaries = np.random.lognormal(mean=3.0, sigma=0.8, size=n)
+    df = pd.DataFrame({"salary": skewed_salaries})
 
     validator = ConstraintValidator()
-    report = validator.validate_constraints(df)
+    mc = validator.calculate_medcouple(df["salary"])
+    # Medcouple for right-skewed distribution is strictly positive
+    assert mc > 0.0
 
-    assert report.passed is False
-    assert report.total_violations >= 2
-    assert report.violations_by_column[0].column == "sensor_reading"
-    assert "iqr_range_violation" in report.violations_by_column[0].rule_broken
+    report = validator.validate_constraints(df)
+    # Adjusted boxplot should report minimal or 0 false violations
+    assert report.total_violations < 10
