@@ -725,13 +725,24 @@ def register_all_tools(mcp: FastMCP) -> None:
         output_csv_path: str,
         id_column: Optional[str] = None,
         task_type: str = "classification",
+        optimal_threshold: Optional[float] = None,
+        calibrator_path: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Perform chunked high-throughput batch inference and verify Kaggle submission integrity."""
+        """Perform chunked high-throughput batch inference with optional DCA optimal cutoff and calibration."""
         try:
             import joblib
             model = joblib.load(model_path)
+            calibrator = joblib.load(calibrator_path) if calibrator_path else None
             predictor = BatchPredictor()
-            dto = predictor.predict_csv(model, input_csv_path, output_csv_path, id_column=id_column, task_type=task_type)
+            dto = predictor.predict_csv(
+                model,
+                input_csv_path,
+                output_csv_path,
+                id_column=id_column,
+                task_type=task_type,
+                optimal_threshold=optimal_threshold,
+                calibrator=calibrator,
+            )
             return sanitize_for_json(dto.to_compact())
         except Exception as e:
             return format_error_envelope(e, "ml_batch_predict", ["model_path", "input_csv_path", "output_csv_path"])
@@ -865,9 +876,10 @@ def register_all_tools(mcp: FastMCP) -> None:
         train_csv_path: str,
         unlabelled_csv_path: str,
         target_column: str,
-        confidence_threshold: float = 0.98,
+        confidence_threshold: float = 0.95,
+        alpha: float = 0.10,
     ) -> Dict[str, Any]:
-        """Extract >=98% high-confidence test predictions as pseudo-labels and refine model."""
+        """Harvest high-confidence pseudo-labels using FlexMatch curriculum thresholds and conformal singletons."""
         try:
             from sklearn.ensemble import RandomForestClassifier
             df_tr = pd.read_csv(train_csv_path)
