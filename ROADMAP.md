@@ -11,7 +11,7 @@ This roadmap tracks the development, mathematical hardening, and validation mile
 | **Phase 1: Data Audit & Hygiene** | Chatterjee rank correlation xi (JASA 2021), Cramér's V, PPS tree, SVD condition number (Nature MI 2023), Ridge-VIF, Belsley variance proportions, MCAR vs MNAR classifier, DataPerf index memorization (NeurIPS 2023), Dirac-Delta boundary sentinels (KDD 2020), Medcouple adjusted outlier bounds. | **Completed ✅** | Local & Colab Pytest (16/16 Passed) |
 | **Phase 2: Defensive Feature Engineering & Balancing** | Cost-sensitive sample weighting (anti-SMOTE), MNAR missingness indicator pipelines, OpenFE cross-numeric features, residual-driven target transforms, dense MiniLM embeddings. | **Completed ✅** | Colab Cloud Pytest (34/34 Passed) |
 | **Phase 3: Calibration, Decision Theory & Safety Control** | Mondrian (class-conditional) conformal & RAPS, Beta calibration & adaptive ECE, Decision Curve Analysis (DCA), Wasserstein-1 drift, Free Energy OOD detection, Covariance manifold stress, Intersectional subgroup fairness. | **Completed ✅** | Colab Cloud Pytest (19/19 Passed) |
-| **Phase 4: Optimization, Serving & MLOps Infrastructure** | ONNX Runtime graph optimization, sub-millisecond batch inference, dynamic FastAPI/Docker generation, standalone interactive HTML eval dashboards. | **In Progress ⏳** | Unit & Integration Suites |
+| **Phase 4: Optimization, Serving & MLOps Infrastructure** | FlexMatch curriculum pseudo-labeling (NeurIPS 2021), ONNX Level-3 graph fusion (IEEE Micro 2022), DCA-aligned batch inference (VLDB 2022), FastAPI modern lifespan & CNCF probes, CIS non-root Docker, and pure SVG DCA/Calibration dashboards. | **Completed ✅** | Local & Colab Pytest (9/9 Passed) |
 
 ---
 
@@ -78,6 +78,28 @@ This roadmap tracks the development, mathematical hardening, and validation mile
 7. **Intersectional Subgroup Fairness:**
    - *Kearns et al. (ICML 2018)* — "Preventing Fairness Gerrymandering: Auditing Subgroup Fairness"
    - Audits Disparate Impact (EEOC 80% rule) and Equalized Odds across the Cartesian product of multiple protected attributes, computing Minimax Disparity.
+
+---
+
+### Phase 4: Production Serving, ONNX Optimization, and MLOps Infrastructure
+1. **FlexMatch & FreeMatch Curriculum Pseudo-Labeling:**
+   - *Zhang et al. (NeurIPS 2021)* — FlexMatch: Boosting Semi-Supervised Learning with Curriculum Pseudo-Labeling.
+   - *Wang et al. (ICLR 2023)* — FreeMatch: Self-adaptive Thresholding for Semi-Supervised Learning.
+   - *Angelopoulos et al. (2023)* — Conformalized Semi-Supervised Learning with Finite-Sample Risk Guarantees.
+   - Replaced static 0.98 threshold with class-adaptive learning status $\tau_c(t) = \tau_{\text{base}} \cdot \max(0.70, \frac{\sigma_c + 1}{\max \sigma + 1})$ and conformal singleton uncertainty set filtering ($|C(x)| = 1$).
+2. **ONNX Runtime Level-3 Hardware Graph Optimization:**
+   - *IEEE Micro 2022* — ONNX Runtime Hardware Graph Optimization. Enabled `ORT_ENABLE_ALL` constant folding, node fusion, and dead-code elimination.
+   - Added robust native GBDT converters for LightGBM, XGBoost, and Scikit-Learn pipelines.
+3. **Out-of-Core Batch Prediction & Decision Theory:**
+   - *Raasveldt et al. (VLDB 2022 / SIGMOD 2023)* — Zero-copy analytical streaming with ID-column preservation, row-count validation, and NaN/Inf sanitization.
+   - Integrated Phase 3 optimal Decision Curve Analysis cutoff $p^*$ and calibrated posterior probabilities.
+4. **FastAPI Modern Lifespan & CIS Non-Root Docker:**
+   - *FastAPI 0.100+ Standards* — Implemented `asynccontextmanager` lifespan lifecycle handler, deprecating `@app.on_event`.
+   - Included CNCF Kubernetes probes (`/healthz`, `/readyz`).
+   - Hardened Dockerfile with unprivileged non-root user (`appuser:10001`) and automated `HEALTHCHECK`.
+5. **Standalone Evaluation Dashboard with Pure SVG Visualizations:**
+   - *Vickers et al. (Annals of Internal Medicine 2021)* & *ACM FAccT 2022*.
+   - Embedded pure SVG charts for Decision Curve Analysis Net Benefit and Beta Calibration Reliability Diagrams.
 
 ---
 

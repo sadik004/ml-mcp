@@ -1,4 +1,4 @@
-"""FastAPI 3-Tier Clean Architecture Serving Code Generator."""
+"""FastAPI 3-Tier Clean Architecture Serving Code Generator with modern lifespan handlers."""
 from __future__ import annotations
 
 import logging
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class APIGenerator:
-    """Synthesizes production-ready 3-tier FastAPI router code and Pydantic v2 DTOs."""
+    """Synthesizes production-ready 3-tier FastAPI router code, lifespan lifecycle, and Pydantic v2 DTOs."""
 
     def __init__(self) -> None:
         pass
@@ -22,121 +22,112 @@ class APIGenerator:
         feature_types: Optional[Dict[str, str]] = None,
         task_type: str = "classification",
     ) -> Dict[str, str]:
-        """Synthesize schemas.py and main.py matching enterprise FastAPI standards."""
+        """Synthesize schemas.py and main.py matching enterprise FastAPI lifespan standards."""
         os.makedirs(output_dir, exist_ok=True)
-        types_map = feature_types or {f: "float" for f in feature_names}
+        f_types = feature_types or {f: "float" for f in feature_names}
 
         # 1. Generate schemas.py
         fields_code = ""
         for feat in feature_names:
-            py_type = types_map.get(feat, "float")
-            if py_type not in ["int", "float", "str", "bool"]:
-                py_type = "float"
-            fields_code += f"    {feat}: {py_type} = Field(..., description='Feature value for {feat}')\n"
+            py_type = f_types.get(feat, "float")
+            fields_code += f"    {feat}: {py_type}\n"
 
-        schemas_py = f'''"""Pydantic v2 Data Transfer Objects for {model_name} Serving."""
+        schemas_py = f"""\"\"\"Pydantic v2 Request/Response Data Transfer Objects.\"\"\"
 from __future__ import annotations
-
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-
-class PredictionRequestDTO(BaseModel):
-    """Inference request schema with strict field validation."""
-    model_config = ConfigDict(extra="forbid")
-
+class PredictionRequest(BaseModel):
+    \"\"\"Input features payload for real-time inference.\"\"\"
 {fields_code}
 
+class PredictionResponse(BaseModel):
+    \"\"\"Inference response envelope.\"\"\"
+    prediction: Any
+    confidence_score: Optional[float] = None
+    model_version: str = "{model_name}"
+    latency_ms: float
 
-class BatchPredictionRequestDTO(BaseModel):
-    """Batch inference request payload."""
-    records: List[PredictionRequestDTO] = Field(..., description="List of feature records")
-
-
-class PredictionResponseDTO(BaseModel):
-    """Single-record prediction response schema."""
-    prediction: Any = Field(..., description="Model prediction output")
-    confidence: Optional[float] = Field(None, description="Prediction probability confidence")
-    latency_ms: float = Field(..., description="Inference execution time in milliseconds")
-
-
-class HealthResponseDTO(BaseModel):
-    """Service liveness and readiness response."""
-    status: str = "healthy"
-    model_name: str = "{model_name}"
-    version: str = "1.0.0"
-'''
+class HealthResponse(BaseModel):
+    \"\"\"CNCF Health probe status.\"\"\"
+    status: str
+    model_loaded: bool
+"""
         schemas_path = os.path.join(output_dir, "schemas.py")
         with open(schemas_path, "w", encoding="utf-8") as f:
             f.write(schemas_py)
 
-        # 2. Generate main.py
-        main_py = f'''"""Production FastAPI Serving Application for {model_name}."""
-from __future__ import annotations
-
+        # 2. Generate main.py with modern asynccontextmanager lifespan handler
+        main_py = f"""\"\"\"FastAPI Model Serving Microservice with Lifespan Lifecycle Management.\"\"\"
+import os
 import time
+from contextlib import asynccontextmanager
 import joblib
-import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, status
-from schemas import (
-    PredictionRequestDTO,
-    BatchPredictionRequestDTO,
-    PredictionResponseDTO,
-    HealthResponseDTO,
-)
+from schemas import PredictionRequest, PredictionResponse, HealthResponse
+
+# Global model container
+ml_models = {{}}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    \"\"\"Enterprise lifespan context manager loading model artifacts at startup.\"\"\"
+    model_path = os.getenv("MODEL_PATH", "model.joblib")
+    if os.path.exists(model_path):
+        ml_models["model"] = joblib.load(model_path)
+    else:
+        ml_models["model"] = None
+    yield
+    # Clean up resources on shutdown
+    ml_models.clear()
 
 app = FastAPI(
-    title="{model_name} Inference API",
-    description="3-Tier Clean Architecture Production Endpoint generated via ml-mcp",
+    title="{model_name} Serving API",
     version="1.0.0",
+    description="Production-grade 3-Tier Clean ML Inference API",
+    lifespan=lifespan,
 )
 
-MODEL_PATH = "{model_name}.joblib"
-model = None
+@app.get("/healthz", response_model=HealthResponse, status_code=status.HTTP_200_OK)
+async def health_check():
+    \"\"\"Kubernetes / CNCF Liveness Probe.\"\"\"
+    return HealthResponse(status="alive", model_loaded=ml_models.get("model") is not None)
 
-@app.on_event("startup")
-def load_pipeline():
-    global model
-    try:
-        model = joblib.load(MODEL_PATH)
-    except Exception as e:
-        print(f"Warning: Could not load model pipeline from {{MODEL_PATH}}: {{e}}")
+@app.get("/readyz", response_model=HealthResponse, status_code=status.HTTP_200_OK)
+async def readiness_check():
+    \"\"\"Kubernetes / CNCF Readiness Probe.\"\"\"
+    is_ready = ml_models.get("model") is not None
+    if not is_ready:
+        raise HTTPException(status_code=503, detail="Model artifact not yet loaded")
+    return HealthResponse(status="ready", model_loaded=True)
 
-@app.get("/health", response_model=HealthResponseDTO, tags=["Health"])
-def health_check():
-    return HealthResponseDTO()
-
-@app.post("/predict", response_model=PredictionResponseDTO, tags=["Inference"])
-def predict(request: PredictionRequestDTO):
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(payload: PredictionRequest):
+    \"\"\"Execute real-time model scoring.\"\"\"
+    model = ml_models.get("model")
     if model is None:
-        raise HTTPException(status_code=503, detail="Model pipeline is not loaded.")
-    
-    start_time = time.perf_counter()
-    input_data = pd.DataFrame([request.model_dump()])
-    
-    try:
-        pred = model.predict(input_data)[0]
-        confidence = None
-        if hasattr(model, "predict_proba"):
-            probas = model.predict_proba(input_data)[0]
-            confidence = float(np.max(probas))
-        
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-        return PredictionResponseDTO(
-            prediction=pred if not isinstance(pred, np.generic) else pred.item(),
-            confidence=confidence,
-            latency_ms=round(elapsed_ms, 2),
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Inference error: {{str(e)}}")
+        raise HTTPException(status_code=503, detail="Model not loaded")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
-'''
+    start_time = time.perf_counter()
+    df_in = pd.DataFrame([payload.model_dump()])
+    
+    pred = model.predict(df_in)[0]
+    conf = None
+    if hasattr(model, "predict_proba"):
+        conf = float(model.predict_proba(df_in)[0].max())
+
+    latency = (time.perf_counter() - start_time) * 1000.0
+
+    return PredictionResponse(
+        prediction=pred,
+        confidence_score=conf,
+        model_version="{model_name}",
+        latency_ms=round(latency, 2),
+    )
+"""
         main_path = os.path.join(output_dir, "main.py")
         with open(main_path, "w", encoding="utf-8") as f:
             f.write(main_py)
 
-        return {"schemas.py": os.path.abspath(schemas_path), "main.py": os.path.abspath(main_path)}
+        return {"schemas.py": schemas_path, "main.py": main_path}

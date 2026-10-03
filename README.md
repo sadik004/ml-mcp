@@ -155,19 +155,19 @@ All tools are decorated with @mcp.tool(), protected by the Token Shield, and ret
 | **14** | ml_benchmark_models | **Phase 3: Arena** | Competitive tournament across LightGBM, XGBoost, CatBoost, Random Forest, Extra Trees, and Ridge/Logistic. |
 | **15** | ml_create_ensemble | **Phase 3: Arena** | Multi-model Stacking and Voting ensembles with out-of-fold (OOF) meta-learners. |
 | **16** | ml_tune_hyperparameters | **Phase 3: Tuning** | Optuna Bayesian optimization with pruning over hyperparameter spaces. |
-| **17** | ml_pseudo_label_loop | **Phase 3: Semi-Supervised** | Extracts high-confidence pseudo-labels from unlabeled pools to expand training sets. |
+| **15** | ml_pseudo_label_loop | **Phase 3: Tournament** | FlexMatch curriculum pseudo-labeling (NeurIPS 2021) with class-adaptive thresholds and conformal singleton sets. |
 | **18** | ml_calibrate_probabilities | **Phase 4: Safety** | 3-Parameter Beta Calibration (Kull et al.) and Equal-Frequency Adaptive ECE (Roelofs et al. 2022) with Platt/Isotonic fallbacks. |
 | **19** | ml_tune_threshold_and_errors | **Phase 4: Safety** | Decision Curve Analysis (DCA Net Benefit, Vickers & Elkin) vs Treat All/None, with Sheng & Ling cost matrix thresholding. |
 | **20** | ml_explain_predictions | **Phase 4: Safety** | Sub-10s TreeSHAP local attributions and global feature importance rankings. |
 | **21** | ml_detect_ood | **Phase 4: Safety** | Helmholtz Free Energy OOD scoring ($E(x) = -T \log \sum \exp(f_i/T)$, Liu et al. NeurIPS 2020) and Mahalanobis distance. |
 | **22** | ml_stress_test_and_fairness | **Phase 4: Safety** | Covariance-preserving manifold stress ($\\delta \\sim \\mathcal{N}(0, \\epsilon^2 \\Sigma)$) and intersectional subgroup fairness (Kearns et al. ICML 2018). |
 | **23** | ml_conformal_risk_control | **Phase 4: Safety** | Mondrian (Class-Conditional) Conformal Prediction ($P(Y \\in C(X) \\mid Y=k) \\ge 1-\\alpha$) and RAPS regularized prediction sets. |
-| **24** | ml_batch_predict | **Phase 5: Serving** | High-throughput chunked batch inference on massive CSV datasets. |
+| **16** | ml_batch_predict | **Phase 5: Serving** | Chunked out-of-core batch scoring with DCA optimal cutoff p* and Kaggle submission integrity guard. |
 | **25** | ml_export_and_document | **Phase 5: Governance** | Auto-synthesizes Mitchell et al. production MODEL_CARD.md. |
-| **26** | ml_optimize_inference | **Phase 5: Serving** | Converts Scikit-Learn / LightGBM models into ONNX runtime graph format with fp16/int8 quantization. |
-| **27** | ml_generate_eval_dashboard | **Phase 5: Visuals** | Generates standalone HTML evaluation dashboard with interactive confusion matrices and charts. |
-| **28** | ml_generate_serving_api | **Phase 5: Serving** | Scaffolds a production-ready 3-tier FastAPI serving microservice with typed Pydantic schemas. |
-| **29** | ml_generate_docker_spec | **Phase 5: Deployment** | Generates minimal, non-root, multi-stage production Dockerfile and docker-compose.yml. |
+| **18** | ml_optimize_inference | **Phase 5: Serving** | ONNX Level-3 graph fusion (ORT_ENABLE_ALL) and single-sample P95/P99 latency benchmarking. |
+| **19** | ml_generate_eval_dashboard | **Phase 5: Serving** | Zero-dependency standalone HTML evaluation dashboard with pure SVG DCA and Calibration charts. |
+| **20** | ml_generate_serving_api | **Phase 5: Serving** | Production 3-Tier clean architecture FastAPI serving router with modern lifespan and /healthz probes. |
+| **21** | ml_generate_docker_spec | **Phase 5: Serving** | CIS Benchmark multi-stage Dockerfile enforcing non-root unprivileged appuser:10001 and HEALTHCHECK. |
 | **30** | ml_monitor_drift | **Phase 5: Monitoring** | Population Stability Index (PSI) and Wasserstein Distance data drift monitoring. |
 | **31** | ml_generate_colab_notebook | **Phase 6: Cloud GPU** | Generates executable .ipynb Colab notebook for remote cloud execution. |
 | **32** | ml_colab_status | **Phase 6: Cloud GPU** | Checks remote Google Colab GPU health, Tesla T4 VRAM availability, and bridge connectivity. |
