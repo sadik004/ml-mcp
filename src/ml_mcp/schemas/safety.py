@@ -126,6 +126,7 @@ class SafetyCertificateReportDTO(BaseDTO):
     conformal_coverage_pct: float = Field(description="Realized empirical coverage percentage (target 95%)")
     conformal_singleton_pct: float = Field(description="Percentage of samples with unique non-ambiguous prediction set")
     ood_cutoff_boundary: float = Field(description="Helmholtz Free Energy 99th percentile cutoff")
+    warnings: List[str] = Field(default_factory=list, description="Non-fatal warnings or diagnostic notices")
     safety_card: str = Field(description="Formatted human-readable Markdown safety certificate card")
 
     def to_compact(self) -> Dict[str, Any]:
@@ -136,6 +137,7 @@ class SafetyCertificateReportDTO(BaseDTO):
             "calibrated_ece": round(self.calibrated_ece * 100, 2),
             "conformal_coverage_pct": round(self.conformal_coverage_pct, 1),
             "top_shap_drivers": self.top_shap_drivers[:5],
+            "warnings": self.warnings,
             "safety_card": self.safety_card,
         }
 

@@ -95,6 +95,9 @@ class TournamentAndTuningReportDTO(BaseDTO):
     champion_artifact_path: Optional[str] = Field(default=None, description="Path to fitted champion model .joblib")
     oof_predictions_path: Optional[str] = Field(default=None, description="Path to saved out-of-fold probability array")
     tournament_card: str = Field(description="Formatted human-readable Markdown tournament card")
+    validation_protocol: str = Field(default="", description="Validation protocol used (e.g. nested CV outer x inner folds)")
+    tuning_trials_completed: int = Field(default=0, ge=0, description="Total Optuna trials actually completed")
+    warnings: List[str] = Field(default_factory=list, description="Non-fatal issues (time-budget hits, fallbacks)")
 
     def to_compact(self) -> Dict[str, Any]:
         return {
@@ -107,6 +110,8 @@ class TournamentAndTuningReportDTO(BaseDTO):
             "cv_fold_std": round(self.cv_fold_std, 4),
             "is_stacking_adopted": self.is_stacking_adopted,
             "best_hyperparameters": self.best_hyperparameters,
+            "validation_protocol": self.validation_protocol,
+            "warnings": self.warnings,
             "tournament_card": self.tournament_card,
         }
 
