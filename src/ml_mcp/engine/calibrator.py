@@ -222,6 +222,41 @@ class TemperatureScaler(BaseEstimator, ClassifierMixin):
         return np.argmax(probs, axis=1)
 
 
+
+class DirichletCalibrator(BaseEstimator, ClassifierMixin):
+    """Kull et al. (NeurIPS 2019) Dirichlet Calibration with L2 regularization for multiclass probability simplex."""
+
+    def __init__(self, base_estimator: Any = None, l2_reg: float = 1.0) -> None:
+        self.base_estimator = base_estimator
+        self.l2_reg = l2_reg
+        self.lr_ = None
+        self.eps = 1e-12
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> "DirichletCalibrator":
+        raw_probs = self.base_estimator.predict_proba(X) if self.base_estimator is not None else X
+        clipped = np.clip(raw_probs, self.eps, 1.0 - self.eps)
+        log_probs = np.log(clipped)
+        
+        # Multinomial Logistic Regression over log-probabilities
+        self.lr_ = LogisticRegression(
+            C=1.0 / max(1e-5, self.l2_reg),
+            solver="lbfgs",
+            max_iter=1000,
+        )
+        self.lr_.fit(log_probs, y)
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        raw_probs = self.base_estimator.predict_proba(X) if self.base_estimator is not None else X
+        clipped = np.clip(raw_probs, self.eps, 1.0 - self.eps)
+        log_probs = np.log(clipped)
+        cal_probs = self.lr_.predict_proba(log_probs)
+        return cal_probs
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        return np.argmax(self.predict_proba(X), axis=1)
+
+
 class ProbabilityCalibrator:
     """Probability Calibrator managing Beta, Platt, Isotonic, and Temperature Scaling."""
 
@@ -282,11 +317,18 @@ class ProbabilityCalibrator:
 
         # 2. Fit Calibrator
         temp_val: Optional[float] = None
-        if method == "beta":
+        if method == "beta" or method == "dirichlet":
             base_fit = clone(model).fit(X_arr, y_arr)
-            beta_cal = BetaCalibrator(base_estimator=base_fit)
-            beta_cal.fit(X_arr, y_arr)
-            calibrated_model = beta_cal
+            if n_classes > 2:
+                # Kull et al. (NeurIPS 2019) Multiclass Dirichlet Calibration
+                dirichlet_cal = DirichletCalibrator(base_estimator=base_fit)
+                dirichlet_cal.fit(X_arr, y_arr)
+                calibrated_model = dirichlet_cal
+                method = "dirichlet"
+            else:
+                beta_cal = BetaCalibrator(base_estimator=base_fit)
+                beta_cal.fit(X_arr, y_arr)
+                calibrated_model = beta_cal
         elif method == "temperature":
             base_fit = clone(model).fit(X_arr, y_arr)
             temp_scaler = TemperatureScaler(base_estimator=base_fit)

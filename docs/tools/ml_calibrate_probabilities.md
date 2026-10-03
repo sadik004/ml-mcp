@@ -24,3 +24,12 @@ Standard Expected Calibration Error (ECE) uses 10 equal-width bins $[0.0, 0.1), 
 `ml-mcp` implements **Adaptive-Quantile ECE**:
 $$\text{ECE}_{\text{adaptive}} = \sum_{b=1}^B \frac{|B_b|}{N} \left| \text{acc}(B_b) - \text{conf}(B_b) \right|$$
 where each bin $B_b$ contains exactly $\lfloor N / B \rfloor$ samples based on empirical quantiles, eliminating sample-size bias.
+
+---
+
+## 3. Multiclass Dirichlet Calibration for Probability Simplex
+For multiclass problems ($K > 2$), standard Beta calibration or Platt scaling fails because independent binary transformations do not preserve the probability simplex condition:
+$$\sum_{k=1}^K P(Y = k \mid X) = 1$$
+`ml-mcp` implements **Dirichlet Calibration with L2 Off-Diagonal Regularization** (Kull et al., NeurIPS 2019):
+$$\ln P(Y = k \mid X) = \sum_{j=1}^K w_{kj} \ln(p_j) + b_k$$
+Formulated as multinomial logistic regression over the log-probabilities $\ln(\mathbf{p})$, Dirichlet calibration guarantees well-calibrated posterior probabilities over multi-class classifications without degenerating to uncalibrated softmax or heuristics.

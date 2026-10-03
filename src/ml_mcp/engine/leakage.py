@@ -154,6 +154,10 @@ class TargetLeakageDetector:
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' not found in dataset.")
 
+        # Out-of-core reservoir sampling guard for massive datasets (>50k rows) to prevent RAM explosion
+        if len(df) > 50000:
+            df = df.sample(50000, random_state=42)
+
         y = df[target_column]
         feature_df = df.drop(columns=[target_column])
 

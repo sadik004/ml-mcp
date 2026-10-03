@@ -20,7 +20,7 @@ class DockerGenerator:
         service_name: str = "ml-serving-api",
         port: int = 8000,
     ) -> Dict[str, str]:
-        """Synthesize multi-stage Dockerfile and docker-compose.yml with non-root security."""
+        """Synthesize multi-stage Dockerfile and docker-compose.yml with non-root security and aligned paths."""
         os.makedirs(output_dir, exist_ok=True)
 
         dockerfile_content = f"""# Stage 1: Build & Dependencies
@@ -36,12 +36,13 @@ WORKDIR /app
 
 # CIS Benchmark: Create and enforce unprivileged non-root user (appuser:10001)
 RUN addgroup --system --gid 10001 appuser && \
-    adduser --system --uid 10001 --ingroup appuser --home /app --no-create-home appuser
+    adduser --system --uid 10001 --ingroup appuser --home /home/appuser appuser
 
 COPY --from=builder /root/.local /home/appuser/.local
 COPY --chown=appuser:appuser . /app
 
 ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONPATH=/home/appuser/.local/lib/python3.11/site-packages:$PYTHONPATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 

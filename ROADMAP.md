@@ -106,3 +106,12 @@ This roadmap tracks the development, mathematical hardening, and validation mile
 ## ⚡ Verification Protocol
 - **Local PC CPU/RAM Load:** Strictly 0% via WebSocket proxy to Google Colab Cloud GPU/CPU.
 - **Remote Testing Harness:** `e:/ML Testing/colab_test_runner.py`
+
+
+### Frontier Architectural Hardening: Master 8-Point Production Alignment (2021–2024 SOTA)
+- **Async Concurrency (PEP 550 / Starlette):** Non-blocking execution of CPU-heavy model tournaments and tuning via `asyncio.to_thread`.
+- **Multiclass Probability Simplex (Kull et al. NeurIPS 2019):** L2-regularized Dirichlet calibration for multi-class classifiers ($K > 2$).
+- **Zero-Copy Serving & Hybrid ONNX (Raasveldt et al. VLDB 2022 / IEEE Micro 2022):** Direct contiguous NumPy array scoring with automated ONNX Runtime / Joblib hybrid loading in FastAPI.
+- **Container CIS Benchmark Security (CIS v1.6):** Synchronized non-root `appuser:10001` with aligned `PYTHONPATH` and pinned `requirements.txt`.
+- **Adversarial Tabular Fuzz Testing (DataPerf NeurIPS 2023):** Defensive validation against dirty currency strings, extreme zero-inflation, and extreme class imbalance.
+- **Big Data Memory Protection (Wes McKinney ACM SIGMOD 2022):** Reservoir sampling and memory guards for Phase 1 data auditing.

@@ -899,7 +899,7 @@ def register_all_tools(mcp: FastMCP) -> None:
             clf = RandomForestClassifier(n_estimators=15, random_state=42)
             clf.fit(X_tr, y_tr)
             labeler = PseudoLabeler(confidence_threshold=confidence_threshold)
-            stats, _ = labeler.refine_with_pseudo_labels(clf, X_tr, y_tr, df_unlab)
+            stats, _ = await asyncio.to_thread(labeler.refine_with_pseudo_labels, clf, X_tr, y_tr, df_unlab)
             return sanitize_for_json(stats)
         except Exception as e:
             return format_error_envelope(e, "ml_pseudo_label_loop", ["train_csv_path", "unlabelled_csv_path", "target_column"])

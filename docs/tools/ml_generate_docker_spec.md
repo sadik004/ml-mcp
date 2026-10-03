@@ -25,3 +25,19 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/healthz || exit 1
 ```
+
+---
+
+## 3. Aligned User Home Directory & PYTHONPATH Configuration
+To prevent `ModuleNotFoundError` during container startup, the generated Dockerfile strictly configures:
+```dockerfile
+RUN addgroup --system --gid 10001 appuser && \
+    adduser --system --uid 10001 --ingroup appuser --home /home/appuser appuser
+
+COPY --from=builder /root/.local /home/appuser/.local
+COPY --chown=appuser:appuser . /app
+
+ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONPATH=/home/appuser/.local/lib/python3.11/site-packages:$PYTHONPATH
+```
+This guarantees user packages compiled in the builder stage are discoverable by the unprivileged `appuser:10001` runtime environment.
