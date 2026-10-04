@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import Field
+
 from ml_mcp.schemas.base import BaseDTO
 
 
@@ -60,11 +62,20 @@ class ModelExportDTO(BaseDTO):
     model_card_path: str = Field(description="Path to synthesized MODEL_CARD.md")
     p95_latency_ms: float = Field(ge=0.0, description="95th percentile inference latency in ms")
     p99_latency_ms: float = Field(ge=0.0, description="99th percentile inference latency in ms")
+    score: Optional[float] = Field(default=None, description="Honest out-of-fold validation score")
+    trained_on: str = Field(default="full_data", description="Data scope used to train the serialized artifact")
+    metrics: Dict[str, Any] = Field(default_factory=dict, description="Out-of-fold metrics")
 
     def to_compact(self) -> Dict[str, Any]:
-        return {
+        res: Dict[str, Any] = {
             "joblib_path": self.joblib_path,
             "onnx_path": self.onnx_path,
             "p95_latency_ms": round(self.p95_latency_ms, 2),
             "p99_latency_ms": round(self.p99_latency_ms, 2),
+            "trained_on": self.trained_on,
         }
+        if self.score is not None:
+            res["score"] = round(self.score, 4)
+        if self.metrics:
+            res["metrics"] = self.metrics
+        return res

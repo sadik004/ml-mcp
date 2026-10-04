@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Union
+
 import numpy as np
 from sklearn.metrics import precision_recall_curve
 
@@ -17,7 +18,7 @@ def calculate_decision_curve_analysis(
     thresholds: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Computes Decision Curve Analysis (Net Benefit Curve - Vickers & Elkin BMJ/Lancet).
-    
+
     Net Benefit(pt) = TP/N - FP/N * (pt / (1 - pt))
     """
     y = np.asarray(y_true, dtype=int)
@@ -172,12 +173,22 @@ class DecisionThresholdOptimizer:
             thresholds = np.array([self.default_threshold])
 
         beta_sq = beta ** 2
+        prevalence = total_positives / len(y) if len(y) > 0 else 0.5
         best_f_beta = -1.0
         min_total_cost = float("inf")
         best_threshold_fbeta = self.default_threshold
         best_threshold_cost = self.default_threshold
         best_prec_fbeta, best_rec_fbeta = 0.0, 0.0
         best_prec_cost, best_rec_cost = 0.0, 0.0
+
+        try:
+            from sklearn.metrics import roc_auc_score
+            auc_val = float(roc_auc_score(y, p))
+            if auc_val < 0.50:
+                auc_val = 1.0 - auc_val
+            has_signal = (auc_val > 0.53)
+        except Exception:
+            has_signal = True
 
         for t in thresholds:
             y_pred = (p >= t).astype(int)
@@ -188,6 +199,7 @@ class DecisionThresholdOptimizer:
 
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            specificity = tn / total_negatives if total_negatives > 0 else 0.0
 
             if precision + recall > 0:
                 f_b = (1.0 + beta_sq) * (precision * recall) / ((beta_sq * precision) + recall)
@@ -200,11 +212,13 @@ class DecisionThresholdOptimizer:
                 benefit_tp=benefit_tp, benefit_tn=benefit_tn,
             )
 
-            if f_b > best_f_beta:
-                best_f_beta = f_b
-                best_threshold_fbeta = float(t)
-                best_prec_fbeta = float(precision)
-                best_rec_fbeta = float(recall)
+            # Prevent trivial degenerate solutions (e.g. all-positive with zero specificity)
+            if has_signal and specificity >= 0.15 and precision > prevalence:
+                if f_b > best_f_beta:
+                    best_f_beta = f_b
+                    best_threshold_fbeta = float(t)
+                    best_prec_fbeta = float(precision)
+                    best_rec_fbeta = float(recall)
 
             if cost < min_total_cost:
                 min_total_cost = cost

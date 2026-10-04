@@ -4,7 +4,10 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any, Dict, List, Optional
+
 import numpy as np
+
+from ml_mcp.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,12 @@ class DashboardGenerator:
 
     def _render_kpi_cards(self, metrics: Dict[str, Any]) -> str:
         """Render CSS flexbox KPI summary cards."""
+        if not metrics:
+            return """
+            <div class="kpi-card">
+                <div class="kpi-title">Evaluation Status</div>
+                <div class="kpi-value">No Metrics Provided</div>
+            </div>"""
         cards_html = ""
         for name, val in metrics.items():
             val_str = f"{val:.4f}" if isinstance(val, float) else str(val)
@@ -81,7 +90,7 @@ class DashboardGenerator:
         """Render Beta Calibration Reliability Diagram pure SVG chart."""
         bins = np.linspace(0.1, 0.9, 9)
         # Well-calibrated observed probabilities
-        observed = bins + np.random.RandomState(42).normal(0, 0.02, len(bins))
+        observed = bins + np.random.RandomState(get_settings().random_state).normal(0, 0.02, len(bins))
         observed = np.clip(observed, 0.0, 1.0)
 
         w, h = 500, 260
@@ -119,10 +128,13 @@ class DashboardGenerator:
         champion_model: str = "Champion Model",
         metrics: Optional[Dict[str, Any]] = None,
         leaderboard: Optional[List[Dict[str, Any]]] = None,
+        top_features: Optional[Dict[str, Any]] = None,
+        confusion_matrix: Optional[Any] = None,
+        **kwargs: Any,
     ) -> str:
         """Generate self-contained HTML dashboard with pure SVG charts."""
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        mets = metrics or {"ROC-AUC": 0.965, "Macro-F1": 0.942, "P95 Latency": "0.78ms"}
+        mets = metrics or {}
 
         kpi_cards = self._render_kpi_cards(mets)
         dca_svg = self._render_dca_net_benefit_svg()

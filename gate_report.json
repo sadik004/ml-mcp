@@ -1,0 +1,83 @@
+[
+  {
+    "gate_id": "G0",
+    "name": "Test-Integrity Anti-Gaming Gate",
+    "passed": true,
+    "evidence": "[PASS] Gate G0 PASSED: Test-Integrity contract verified. Zero gaming/suppression detected.",
+    "details": null
+  },
+  {
+    "gate_id": "G1",
+    "name": "Zero Silent Handlers Gate",
+    "passed": true,
+    "evidence": "PASSED: 0 silent exception handlers found in src/ml_mcp.",
+    "details": null
+  },
+  {
+    "gate_id": "G2",
+    "name": "No Hardcoded Metrics / Zero Guarantee Slack",
+    "passed": true,
+    "evidence": "No hardcoded metrics or guarantee slack found in src/ml_mcp",
+    "details": {
+      "violations": []
+    }
+  },
+  {
+    "gate_id": "G3",
+    "name": "Honest Out-Of-Sample Metrics",
+    "passed": true,
+    "evidence": "......                                                                   [100%]\n============================== warnings summary ===============================\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47: PendingDeprecationWarning: The set_bad function will be deprecated in a future version. Use cmap.with_extremes(bad=...) or Colormap(bad=...) instead.\n    red_blue.set_bad(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48: PendingDeprecationWarning: The set_over function will be deprecated in a future version. Use cmap.with_extremes(over=...) or Colormap(over=...) instead.\n    red_blue.set_over(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49: PendingDeprecationWarning: The set_under function will be deprecated in a future version. Use cmap.with_extremes(under=...) or Colormap(under=...) instead.\n    red_blue.set_under(gray_rgb.tolist(), 1.0)  # \"under\" is incorrectly used instead of \"bad\" in the scatter plot\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n6 passed, 3 warnings in 3.38s",
+    "details": null
+  },
+  {
+    "gate_id": "G4",
+    "name": "Visible Fallbacks in Warnings",
+    "passed": true,
+    "evidence": "......                                                                   [100%]\n============================== warnings summary ===============================\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47: PendingDeprecationWarning: The set_bad function will be deprecated in a future version. Use cmap.with_extremes(bad=...) or Colormap(bad=...) instead.\n    red_blue.set_bad(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48: PendingDeprecationWarning: The set_over function will be deprecated in a future version. Use cmap.with_extremes(over=...) or Colormap(over=...) instead.\n    red_blue.set_over(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49: PendingDeprecationWarning: The set_under function will be deprecated in a future version. Use cmap.with_extremes(under=...) or Colormap(under=...) instead.\n    red_blue.set_under(gray_rgb.tolist(), 1.0)  # \"under\" is incorrectly used instead of \"bad\" in the scatter plot\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n6 passed, 3 warnings in 4.34s",
+    "details": null
+  },
+  {
+    "gate_id": "G5",
+    "name": "Fitted Estimators Round-Trip",
+    "passed": true,
+    "evidence": ".....                                                                    [100%]\n============================== warnings summary ===============================\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47: PendingDeprecationWarning: The set_bad function will be deprecated in a future version. Use cmap.with_extremes(bad=...) or Colormap(bad=...) instead.\n    red_blue.set_bad(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48: PendingDeprecationWarning: The set_over function will be deprecated in a future version. Use cmap.with_extremes(over=...) or Colormap(over=...) instead.\n    red_blue.set_over(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49: PendingDeprecationWarning: The set_under function will be deprecated in a future version. Use cmap.with_extremes(under=...) or Colormap(under=...) instead.\n    red_blue.set_under(gray_rgb.tolist(), 1.0)  # \"under\" is incorrectly used instead of \"bad\" in the scatter plot\n\ntests/verification/test_artifact_roundtrip.py::test_create_ensemble_artifact_roundtrip\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\utils\\validation.py:2830: UserWarning: X does not have valid feature names, but LogisticRegression was fitted with feature names\n    warnings.warn(\n\ntests/verification/test_artifact_roundtrip.py::test_create_ensemble_artifact_roundtrip\ntests/verification/test_artifact_roundtrip.py::test_export_and_document_artifact_roundtrip\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\utils\\validation.py:2830: UserWarning: X does not have valid feature names, but RandomForestClassifier was fitted with feature names\n    warnings.warn(\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n5 passed, 6 warnings in 7.76s",
+    "details": null
+  },
+  {
+    "gate_id": "G6",
+    "name": "Statistical Guarantees Honesty & Validity",
+    "passed": true,
+    "evidence": ".....                                                                    [100%]\n============================== warnings summary ===============================\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:47: PendingDeprecationWarning: The set_bad function will be deprecated in a future version. Use cmap.with_extremes(bad=...) or Colormap(bad=...) instead.\n    red_blue.set_bad(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:48: PendingDeprecationWarning: The set_over function will be deprecated in a future version. Use cmap.with_extremes(over=...) or Colormap(over=...) instead.\n    red_blue.set_over(gray_rgb.tolist(), 1.0)\n\nC:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49\n  C:\\Users\\User\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shap\\plots\\colors\\_colors.py:49: PendingDeprecationWarning: The set_under function will be deprecated in a future version. Use cmap.with_extremes(under=...) or Colormap(under=...) instead.\n    red_blue.set_under(gray_rgb.tolist(), 1.0)  # \"under\" is incorrectly used instead of \"bad\" in the scatter plot\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n5 passed, 3 warnings in 19.35s",
+    "details": null
+  },
+  {
+    "gate_id": "G7",
+    "name": "Test Suite Green & High Coverage",
+    "passed": true,
+    "evidence": "306 passed, 100 warnings in 140.53s (0:02:20)",
+    "details": null
+  },
+  {
+    "gate_id": "G8",
+    "name": "Ruff Linter & Strict Mypy Type Safety",
+    "passed": true,
+    "evidence": "Ruff: exit 0; Mypy: exit 0",
+    "details": null
+  },
+  {
+    "gate_id": "G9",
+    "name": "3-Tier Clean Architecture Invariants",
+    "passed": true,
+    "evidence": "Clean Architecture enforced: zero IO in services, zero hardcoded seeds",
+    "details": {
+      "violations": []
+    }
+  },
+  {
+    "gate_id": "G10",
+    "name": "Test-Backed Documentation Integrity",
+    "passed": true,
+    "evidence": "All 28 documentation claim tags verified against test suite",
+    "details": null
+  }
+]

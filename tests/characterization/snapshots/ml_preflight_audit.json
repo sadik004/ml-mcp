@@ -1,0 +1,12 @@
+{
+  "critical_red_flags": "list",
+  "critical_red_flags_count": "int",
+  "dataset_name": "str",
+  "executive_card": "str",
+  "health_score": "int",
+  "readiness_verdict": "str",
+  "sha256_hash": "str",
+  "shape": "list",
+  "warnings": "list",
+  "warnings_count": "int"
+}

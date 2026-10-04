@@ -1,14 +1,15 @@
 """Cost-Sensitive Class Balancer and Empirical Resampler (Wallace et al. 2021; Menon et al. 2021)."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
+
 import numpy as np
 import pandas as pd
+from imblearn.over_sampling import RandomOverSampler
 from imblearn.pipeline import Pipeline as ImbPipeline
 from imblearn.under_sampling import RandomUnderSampler
-from imblearn.over_sampling import RandomOverSampler
 from sklearn.base import BaseEstimator
-from sklearn.utils.class_weight import compute_sample_weight, compute_class_weight
+from sklearn.utils.class_weight import compute_class_weight, compute_sample_weight
 
 
 class ClassBalancer:
@@ -24,8 +25,9 @@ class ClassBalancer:
           support without interpolation artifacts.
     """
 
-    def __init__(self, random_state: int = 42) -> None:
-        self.random_state = random_state
+    def __init__(self, random_state: Optional[int] = None) -> None:
+        from ml_mcp.config import get_settings
+        self.random_state = random_state if random_state is not None else get_settings().random_state
 
     def compute_weights(self, y: Any) -> np.ndarray:
         """Computes exact inverse-frequency balanced sample weights: w_i = N / (K * N_{y_i}).

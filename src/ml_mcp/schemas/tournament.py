@@ -1,8 +1,11 @@
 """Tournament Leaderboard, Model Evaluation, and Lineage DTOs."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-from pydantic import Field, field_validator
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import Field, field_validator, model_validator
+from typing_extensions import Self
+
 from ml_mcp.schemas.base import BaseDTO
 
 
@@ -11,8 +14,8 @@ class ModelEvaluationDTO(BaseDTO):
 
     model_name: str = Field(description="Algorithm name (e.g. CatBoostClassifier)")
     metric_name: str = Field(description="Primary evaluation metric name")
-    mean_cv_score: float = Field(description="Mean score across all validation folds")
-    std_cv_score: float = Field(ge=0.0, description="Standard deviation across validation folds")
+    mean_cv_score: Optional[float] = Field(default=None, description="Mean score across all validation folds")
+    std_cv_score: float = Field(default=0.0, ge=0.0, description="Standard deviation across validation folds")
     fit_time_seconds: float = Field(ge=0.0, description="Total wall-clock training time in seconds")
     inference_latency_ms: float = Field(ge=0.0, description="Single-record inference latency in ms")
     overfit_gap: float = Field(
@@ -22,6 +25,20 @@ class ModelEvaluationDTO(BaseDTO):
         default_factory=dict,
         description="Top predictive features capped to top 10 for token protection",
     )
+    warnings: List[str] = Field(
+        default_factory=list,
+        description="Diagnostics and notices encountered during model evaluation",
+    )
+    cv_score: Optional[float] = Field(
+        default=None,
+        description="Alias for mean_cv_score for audit and verification compatibility",
+    )
+
+    @model_validator(mode="after")
+    def sync_cv_score(self) -> Self:
+        if self.cv_score is None and self.mean_cv_score is not None:
+            self.cv_score = self.mean_cv_score
+        return self
 
     @field_validator("feature_importances", mode="before")
     @classmethod
@@ -42,12 +59,38 @@ class TournamentLeaderboardDTO(BaseDTO):
     task_type: str = Field(description="classification or regression")
     primary_metric: str = Field(description="Optimized selection metric")
     champion_model: str = Field(description="Name of the winning model")
-    champion_score: float = Field(description="Cross-validation score of the champion")
+    champion_score: Optional[float] = Field(default=0.0, description="Cross-validation score of the champion")
+    splitter: Optional[str] = Field(
+        default=None, description="Cross-validation splitter strategy utilized"
+    )
+    champion_score_source: str = Field(
+        default="outer_holdout",
+        description="Source of champion_score: 'outer_holdout', 'cross_validation', or 'unavailable'",
+    )
+    selection_cv_score: Optional[float] = Field(
+        default=None,
+        description="Cross-validation score that determined model selection before holdout evaluation",
+    )
+    selection_index: Optional[List[int]] = Field(
+        default=None,
+        description="Sample indices utilized during cross-validation model selection",
+    )
+    holdout_index: Optional[List[int]] = Field(
+        default=None,
+        description="Sample indices held out for unbiased champion evaluation",
+    )
+    evaluation_mode: Literal["out_of_fold", "held_out_test", "in_sample", "unknown_provenance"] = Field(
+        default="held_out_test",
+        description="Evaluation regime used for champion scoring",
+    )
     stacking_candidates: List[str] = Field(
         default_factory=list, description="Top 3 distinct models selected for stacking blend"
     )
     leaderboard: List[ModelEvaluationDTO] = Field(
         default_factory=list, description="Ranked list of evaluated models"
+    )
+    warnings: List[str] = Field(
+        default_factory=list, description="Diagnostics and notices regarding model exclusions or failures"
     )
 
     def to_compact(self) -> Dict[str, Any]:
@@ -56,16 +99,20 @@ class TournamentLeaderboardDTO(BaseDTO):
             "task_type": self.task_type,
             "primary_metric": self.primary_metric,
             "champion_model": self.champion_model,
-            "champion_score": round(self.champion_score, 4),
+            "champion_score": round(self.champion_score, 4) if self.champion_score is not None else None,
+            "champion_score_source": self.champion_score_source,
+            "selection_cv_score": round(self.selection_cv_score, 4) if self.selection_cv_score is not None else None,
+            "evaluation_mode": self.evaluation_mode,
             "stacking_candidates": self.stacking_candidates,
             "leaderboard_summary": [
                 {
                     "model": m.model_name,
-                    "mean_score": round(m.mean_cv_score, 4),
+                    "mean_score": round(m.mean_cv_score, 4) if m.mean_cv_score is not None else None,
                     "fit_time_s": round(m.fit_time_seconds, 2),
                 }
                 for m in self.leaderboard[:5]
             ],
+            "warnings": self.warnings,
         }
 
 

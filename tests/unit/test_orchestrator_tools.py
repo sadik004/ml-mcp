@@ -70,7 +70,13 @@ async def test_ml_certify_safety_and_decisions_tool(sample_csv):
     assert "ml_certify_safety_and_decisions" in tools
 
     tool_fn = tools["ml_certify_safety_and_decisions"].fn
-    res = await tool_fn(csv_path=sample_csv, target_column="target", view="compact")
+    res = await tool_fn(
+        csv_path=sample_csv,
+        target_column="target",
+        view="compact",
+        train_ephemeral=True,
+        allow_in_sample_diagnostic=True,
+    )
 
     assert "error" not in res
     assert "optimal_threshold" in res

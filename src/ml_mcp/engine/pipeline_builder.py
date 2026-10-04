@@ -1,7 +1,8 @@
 """Defensive Zero-Leakage Pipeline Builder with MNAR Missingness Indicators and Adaptive Encoders."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Union
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
@@ -9,6 +10,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, RobustScaler, TargetEncoder
+
+from ml_mcp.config import get_settings
 
 
 class DefensivePipelineBuilder:
@@ -78,7 +81,7 @@ class DefensivePipelineBuilder:
                 num_imputer = IterativeImputer(
                     estimator=BayesianRidge(),
                     max_iter=10,
-                    random_state=42,
+                    random_state=get_settings().random_state,
                     sample_posterior=False,
                     add_indicator=True,
                 )
@@ -119,3 +122,37 @@ class DefensivePipelineBuilder:
             steps.append(("estimator", estimator))
 
         return Pipeline(steps)
+
+
+def build_sealed_pipeline(
+    estimator: BaseEstimator,
+    df_or_X: Union[pd.DataFrame, np.ndarray],
+    target_column: Optional[str] = None,
+) -> Pipeline:
+    """Build an end-to-end sealed Pipeline with data-adaptive preprocessing to prevent fold leakage."""
+    if isinstance(estimator, Pipeline):
+        return estimator
+
+    if isinstance(df_or_X, pd.DataFrame):
+        has_non_numeric = any(
+            df_or_X[col].dtype == "object"
+            or isinstance(df_or_X[col].dtype, pd.StringDtype)
+            or df_or_X[col].isnull().any()
+            for col in df_or_X.columns
+            if col != target_column
+        )
+        if has_non_numeric:
+            builder = DefensivePipelineBuilder()
+            pipe = builder.build_pipeline(df_or_X, target_column=target_column)
+            return Pipeline([("preprocessor", pipe.named_steps["preprocessor"]), ("model", estimator)])
+
+    return Pipeline([("model", estimator)])
+
+
+def prepare_estimator(
+    X: Union[pd.DataFrame, np.ndarray],
+    base_estimator: BaseEstimator,
+    target_column: Optional[str] = None,
+) -> Pipeline:
+    """Build an end-to-end sealed Pipeline with data-adaptive preprocessing to prevent fold leakage."""
+    return build_sealed_pipeline(base_estimator, X, target_column=target_column)

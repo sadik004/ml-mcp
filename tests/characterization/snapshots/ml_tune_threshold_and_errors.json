@@ -1,0 +1,12 @@
+{
+  "analytical_cost_threshold": "float",
+  "confusion_matrix": "dict",
+  "cost_savings": "float",
+  "dca_net_benefit": "float",
+  "f_beta_score": "float",
+  "optimal_threshold": "float",
+  "precision": "float",
+  "recall": "float",
+  "total_cost_default": "float",
+  "total_cost_optimal": "float"
+}

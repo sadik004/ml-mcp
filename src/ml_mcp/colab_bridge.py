@@ -1,17 +1,19 @@
 """Colab cloud bridge, tunnel URL persistence, and runtime watchdog."""
 from __future__ import annotations
 
-import os
+import logging
 import re
 import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ml_mcp.schemas.colab import ColabSessionDTO
+
+logger = logging.getLogger(__name__)
 
 
 class ColabBridge:
@@ -29,8 +31,8 @@ class ColabBridge:
         try:
             self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
             self.artifacts_dir.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Colab directory initialization skipped/failed: {e}")
 
     @property
     def is_initialized(self) -> bool:
@@ -94,8 +96,8 @@ class ColabCloudRunner:
                     "machine_shape": getattr(s, "machine_shape", "STANDARD"),
                     "url": getattr(s, "url", ""),
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Colab StateStore query unavailable: {e}")
 
         # If store empty, attempt sync
         if not sessions:
@@ -111,17 +113,17 @@ class ColabCloudRunner:
                         "machine_shape": getattr(getattr(a, "machine_shape", None), "name", "STANDARD"),
                         "url": getattr(getattr(a, "runtime_proxy_info", None), "url", ""),
                     })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Colab state.sync_sessions unavailable: {e}")
 
         return sessions
 
     def _sync_remote_assignment_if_needed(self, session_name: Optional[str] = "gpu") -> Optional[Dict[str, Any]]:
         """Auto-syncs or auto-provisions remote Colab compute session, prioritizing GPU."""
         try:
+            from colab_cli.commands import session as session_cmd
             from colab_cli.common import state
             from colab_cli.state import SessionState, StateStore
-            from colab_cli.commands import session as session_cmd
 
             store = StateStore()
             raw_list = store.list()
@@ -197,11 +199,11 @@ class ColabCloudRunner:
                         "variant": getattr(existing, "variant", "GPU"),
                         "url": getattr(existing, "url", ""),
                     }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Colab fallback session provisioning failed: {e}")
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Colab assignment sync failed: {e}")
         return None
 
     def provision_session(
@@ -244,7 +246,12 @@ class ColabCloudRunner:
         """Probes and returns true empirical Colab hardware specs, VRAM, and RAM."""
         info = self._sync_remote_assignment_if_needed(session_name)
         active_name = info["name"] if info else (session_name or "gpu")
-        if not info:
+
+        probe_code = 'import torch, psutil\ncuda = bool(torch.cuda.is_available())\ndev = str(torch.cuda.get_device_name(0)) if cuda else "CPU"\nvram_tot = float(torch.cuda.get_device_properties(0).total_memory / (1024**3)) if cuda else 0.0\nvram_use = float(torch.cuda.memory_allocated(0) / (1024**3)) if cuda else 0.0\nram_tot = float(psutil.virtual_memory().total / (1024**3))\nram_avail = float(psutil.virtual_memory().available / (1024**3))\nprint(f"PROBE:CUDA={cuda}|DEV={dev}|VRAM_TOT_GB={vram_tot:.2f}|VRAM_USE_GB={vram_use:.2f}|RAM_TOT_GB={ram_tot:.2f}|RAM_AVAIL_GB={ram_avail:.2f}")\n'
+
+        res = self.execute_code(probe_code, session=active_name, timeout=25.0)
+
+        if not res.get("success") and not info:
             dto = ColabSessionDTO(
                 session_name=active_name,
                 status="disconnected",
@@ -254,10 +261,6 @@ class ColabCloudRunner:
                 warnings=["No active Colab compute session found in state or cloud assignments."],
             )
             return dto.to_compact()
-
-        probe_code = 'import torch, psutil\ncuda = bool(torch.cuda.is_available())\ndev = str(torch.cuda.get_device_name(0)) if cuda else "CPU"\nvram_tot = float(torch.cuda.get_device_properties(0).total_memory / (1024**3)) if cuda else 0.0\nvram_use = float(torch.cuda.memory_allocated(0) / (1024**3)) if cuda else 0.0\nram_tot = float(psutil.virtual_memory().total / (1024**3))\nram_avail = float(psutil.virtual_memory().available / (1024**3))\nprint(f"PROBE:CUDA={cuda}|DEV={dev}|VRAM_TOT_GB={vram_tot:.2f}|VRAM_USE_GB={vram_use:.2f}|RAM_TOT_GB={ram_tot:.2f}|RAM_AVAIL_GB={ram_avail:.2f}")\n'
-
-        res = self.execute_code(probe_code, session=active_name, timeout=25.0)
 
         cuda_available = False
         hardware = "CPU"
@@ -295,7 +298,7 @@ class ColabCloudRunner:
             vram_total_mb=vram_total_mb,
             ram_total_gb=ram_total_gb,
             ram_available_gb=ram_avail_gb,
-            endpoint=info.get("endpoint"),
+            endpoint=info.get("endpoint") if info else None,
             tunnel_url=None,
             active_job_id=None,
             warnings=warnings,

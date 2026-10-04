@@ -1,13 +1,16 @@
 """Residual-Driven Skewed Target Transformer (Tarasiuk 2021/2023)."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
+
 import numpy as np
-import pandas as pd
 from scipy.stats import skew
 from sklearn.base import BaseEstimator
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.preprocessing import PowerTransformer
+
+logger = logging.getLogger(__name__)
 
 
 class SkewedTargetTransformer:
@@ -36,8 +39,8 @@ class SkewedTargetTransformer:
                     model.fit(X_mat, y)
                     preds = model.predict(X_mat)
                     return y - preds
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Linear baseline residual fitting failed: {e}")
         # Fallback baseline: deviation from empirical mean (preserves exact marginal skewness)
         return y - np.mean(y)
 

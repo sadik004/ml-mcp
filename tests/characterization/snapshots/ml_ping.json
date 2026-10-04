@@ -1,0 +1,13 @@
+{
+  "cuda_available": "bool",
+  "cuda_device_count": "int",
+  "cuda_device_name": "NoneType",
+  "drive_mounted": "bool",
+  "is_colab": "bool",
+  "platform": "str",
+  "python_version": "str",
+  "server_name": "str",
+  "status": "str",
+  "storage_path": "str",
+  "storage_writable": "bool"
+}

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Union
+from typing import Any, Optional
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, r2_score
@@ -15,8 +16,9 @@ logger = logging.getLogger(__name__)
 class ModelStressTester:
     """Stress tests ML models using Covariance-Aware Manifold Perturbations and Outlier Injections."""
 
-    def __init__(self, random_state: int = 42) -> None:
-        self.random_state = random_state
+    def __init__(self, random_state: Optional[int] = None) -> None:
+        from ml_mcp.config import get_settings
+        self.random_state = random_state if random_state is not None else get_settings().random_state
 
     def _inject_perturbation(
         self,
@@ -88,23 +90,31 @@ class ModelStressTester:
     ) -> StressTestReportDTO:
         """Evaluate model degradation under feature perturbation."""
         rng = np.random.RandomState(self.random_state)
-        X_arr = X_test.to_numpy(dtype=float) if isinstance(X_test, pd.DataFrame) else np.asarray(X_test, dtype=float)
         y_arr = np.asarray(y_test)
-
-        baseline_preds = model.predict(X_arr)
         is_classification = task_type == "classification" or len(np.unique(y_arr)) <= 10
+
+        if isinstance(X_test, pd.DataFrame):
+            baseline_preds = model.predict(X_test)
+            num_cols = X_test.select_dtypes(include=[np.number]).columns.tolist()
+            if num_cols:
+                X_num = X_test[num_cols].to_numpy(dtype=float)
+                X_num_stressed = self._inject_perturbation(X_num, perturbation_type, noise_level, rng)
+                X_stressed = X_test.copy()
+                X_stressed[num_cols] = X_num_stressed
+            else:
+                X_stressed = X_test.copy()
+            stressed_preds = model.predict(X_stressed)
+        else:
+            X_arr = np.asarray(X_test, dtype=float)
+            baseline_preds = model.predict(X_arr)
+            X_stressed = self._inject_perturbation(X_arr, perturbation_type, noise_level, rng)
+            stressed_preds = model.predict(X_stressed)
 
         if is_classification:
             baseline_score = float(accuracy_score(y_arr, baseline_preds))
-        else:
-            baseline_score = float(r2_score(y_arr, baseline_preds))
-
-        X_stressed = self._inject_perturbation(X_arr, perturbation_type, noise_level, rng)
-        stressed_preds = model.predict(X_stressed)
-
-        if is_classification:
             stressed_score = float(accuracy_score(y_arr, stressed_preds))
         else:
+            baseline_score = float(r2_score(y_arr, baseline_preds))
             stressed_score = float(r2_score(y_arr, stressed_preds))
 
         denominator = abs(baseline_score) if abs(baseline_score) > 1e-6 else 1.0

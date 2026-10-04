@@ -1,0 +1,7 @@
+{
+  "accelerator": "str",
+  "error": "NoneType",
+  "output": "str",
+  "session_name": "str",
+  "success": "bool"
+}

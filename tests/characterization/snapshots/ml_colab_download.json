@@ -1,0 +1,9 @@
+{
+  "bytes_transferred": "int",
+  "error": "NoneType",
+  "local_path": "str",
+  "output": "str",
+  "remote_path": "str",
+  "session": "str",
+  "success": "bool"
+}

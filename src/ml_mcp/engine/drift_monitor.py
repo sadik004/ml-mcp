@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional
+
 import numpy as np
 import pandas as pd
 from scipy.stats import ks_2samp, wasserstein_distance
@@ -43,13 +44,15 @@ def calculate_permutation_wasserstein_p_value(
     curr_col: np.ndarray,
     observed_w1: float,
     n_permutations: int = 100,
-    random_state: int = 42,
+    random_state: Optional[int] = None,
 ) -> float:
     """Computes permutation empirical p-value for Wasserstein-1 shift (Ramdas et al. JMLR 2017)."""
-    rng = np.random.RandomState(random_state)
+    from ml_mcp.config import get_settings
+    seed = random_state if random_state is not None else get_settings().random_state
+    rng = np.random.RandomState(seed)
     n_ref = len(ref_col)
     combined = np.concatenate([ref_col, curr_col])
-    
+
     null_count = 0
     for _ in range(n_permutations):
         shuffled = rng.permutation(combined)

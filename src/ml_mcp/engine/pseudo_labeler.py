@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -29,13 +29,14 @@ class PseudoLabeler:
         confidence_threshold: Optional[float] = None,
         min_threshold: float = 0.70,
         alpha: float = 0.10,
-        random_state: int = 42,
+        random_state: Optional[int] = None,
     ) -> None:
+        from ml_mcp.config import get_settings
         self.base_threshold = confidence_threshold if confidence_threshold is not None else base_threshold
         self.confidence_threshold = self.base_threshold
         self.min_threshold = min_threshold
         self.alpha = alpha
-        self.random_state = random_state
+        self.random_state = random_state if random_state is not None else get_settings().random_state
 
     def compute_class_adaptive_thresholds(
         self, probas: np.ndarray, num_classes: int

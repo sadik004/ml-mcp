@@ -97,3 +97,11 @@ def test_gradient_feature_selector_oof_cross_validation():
     assert "noise_1" in selector.dropped_features_
     assert "noise_2" in selector.dropped_features_
 
+
+def test_gradient_feature_selector_small_dataset_fallback():
+    X = np.random.randn(8, 4)
+    y = np.array([0, 1, 0, 1, 0, 1, 0, 1])
+    selector = GradientFeatureSelector(cv=5)
+    selector.fit(X, y)
+    assert len(selector.selected_features_) > 0
+

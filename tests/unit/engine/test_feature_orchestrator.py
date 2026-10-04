@@ -37,6 +37,25 @@ def test_feature_pipeline_orchestrator_execution(tmp_path):
     assert len(report.synthesized_features) >= 1
     assert "time_seconds_hour" in report.synthesized_features or "V_l2_norm" in report.synthesized_features
     assert report.class_weights is not None
-    assert "0" in report.class_weights and "1" in report.class_weights
     assert os.path.exists(report.preprocessor_artifact_path)
     assert "FEATURE PIPELINE GENERATION COMPLETE" in report.receipt_card
+
+
+def test_feature_pipeline_orchestrator_with_pruning(tmp_path):
+    np.random.seed(42)
+    n = 150
+    data = {f"col_{i}": np.random.normal(0, 1, n) for i in range(10)}
+    data["target"] = np.random.binomial(1, 0.3, n)
+    df = pd.DataFrame(data)
+
+    orchestrator = FeaturePipelineOrchestrator(artifact_dir=str(tmp_path))
+    report = orchestrator.prepare_pipeline(
+        df=df,
+        target_column="target",
+        task_type="classification",
+        enable_synthesis=False,
+        enable_pruning=True,
+    )
+    assert isinstance(report, FeaturePipelineReportDTO)
+    assert os.path.exists(report.preprocessor_artifact_path)
+

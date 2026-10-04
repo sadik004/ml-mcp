@@ -1,7 +1,8 @@
 """Feature synthesis module with cyclical, ratio, OpenFE cross-numeric, and CatBoost/ExploreKit aggregations."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -54,8 +55,8 @@ class RatioFeatureTransformer(BaseEstimator, TransformerMixin):
                     den_series,
                 )
                 ratio_val = num_series / safe_denom
-                ratio_val = np.nan_to_num(ratio_val, nan=0.0, posinf=1e6, neginf=-1e6)
-                X_out[target_name] = ratio_val
+                ratio_clean = np.nan_to_num(ratio_val.to_numpy(), nan=0.0, posinf=1e6, neginf=-1e6)
+                X_out[target_name] = ratio_clean
 
         return X_out
 
@@ -94,9 +95,13 @@ class CrossNumericTransformer(BaseEstimator, TransformerMixin):
         # 2. Compute sample variances to select top_k most informative candidate features
         variances = {}
         for c in num_cols:
-            var = float(X[c].var(ddof=0))
-            if not np.isnan(var) and var > 0:
-                variances[c] = var
+            var_val = X[c].var(ddof=0)
+            try:
+                var = float(var_val)  # type: ignore[arg-type]
+                if not np.isnan(var) and var > 0:
+                    variances[c] = var
+            except (ValueError, TypeError):
+                continue
 
         if len(variances) < 2:
             return self
@@ -287,15 +292,15 @@ class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
                     smoothed_mean,
                 )
                 ratio_val = num_series / safe_mean
-                ratio_val = np.nan_to_num(ratio_val, nan=1.0, posinf=1e6, neginf=-1e6)
-                X_out[ratio_col] = ratio_val
+                ratio_clean = np.nan_to_num(ratio_val.to_numpy(), nan=1.0, posinf=1e6, neginf=-1e6)
+                X_out[ratio_col] = ratio_clean
 
             if create_zscore:
                 z_col = f"{num_col}_zscore_in_{cat_col}"
                 safe_std = np.where(np.abs(group_std) < self.epsilon, self.epsilon, group_std)
                 z_val = (num_series - smoothed_mean) / safe_std
-                z_val = np.nan_to_num(z_val, nan=0.0, posinf=10.0, neginf=-10.0)
-                X_out[z_col] = z_val
+                z_clean = np.nan_to_num(z_val.to_numpy(), nan=0.0, posinf=10.0, neginf=-10.0)
+                X_out[z_col] = z_clean
 
         return X_out
 
@@ -303,7 +308,7 @@ class GroupByAggregationTransformer(BaseEstimator, TransformerMixin):
 class LatentManifoldOutlierTransformer(BaseEstimator, TransformerMixin):
     """
     Computes geometrical latent space manifold distance and outlier energy for anonymous/PCA feature blocks.
-    
+
     Theoretical Basis:
         - Euclidean L2 Norm: ||V||_2 = sqrt(sum(V_i^2))
         - Mahalanobis / Variance-weighted normalized anomaly score

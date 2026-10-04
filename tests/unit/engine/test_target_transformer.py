@@ -70,3 +70,16 @@ def test_target_transformer_residual_driven_validation():
     res = transformer.transform_target(y, X=X)
     assert "residual_skewness" in res
     assert res["is_skewed"] is True
+
+
+def test_target_transformer_explicit_methods():
+    y = np.array([1.0, 2.0, 5.0, 10.0])
+    transformer = SkewedTargetTransformer()
+    res_log = transformer.transform_target(y, method="log1p")
+    assert res_log["method"] == "log1p"
+
+    res_yj = transformer.transform_target(y, method="yeo-johnson")
+    assert res_yj["method"] == "yeo-johnson"
+
+    res_none = transformer.transform_target(y, method="none")
+    assert res_none["method"] == "none"

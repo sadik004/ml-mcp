@@ -1,0 +1,15 @@
+{
+  "active_job_id": "NoneType",
+  "cuda_available": "bool",
+  "endpoint": "NoneType",
+  "hardware": "str",
+  "is_alive": "bool",
+  "ram_available_gb": "float",
+  "ram_total_gb": "float",
+  "session_name": "str",
+  "status": "str",
+  "tunnel_url": "NoneType",
+  "vram_allocated_mb": "float",
+  "vram_total_mb": "float",
+  "warnings": "list"
+}

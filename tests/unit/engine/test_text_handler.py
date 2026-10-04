@@ -72,3 +72,20 @@ def test_text_feature_handler_dense_embeddings_fallback():
     assert embeddings.shape[0] == 4
     assert embeddings.shape[1] > 0
     assert not np.isnan(embeddings).any()
+
+
+def test_text_feature_handler_tfidf_svd_fallback():
+    from unittest.mock import patch
+    reviews = pd.Series([
+        "Outstanding performance and sleek industrial design!",
+        "Customer support was unhelpful and delivery took weeks.",
+        "Decent functionality for the price point, fits standard desks.",
+        "Highly recommended for daily professional workflows and tasks.",
+    ])
+    handler = TextFeatureHandler()
+    with patch.dict("sys.modules", {"sentence_transformers": None}):
+        embeddings = handler.extract_dense_embeddings(reviews, n_components=4)
+        assert isinstance(embeddings, np.ndarray)
+        assert embeddings.shape[0] == 4
+        assert embeddings.shape[1] > 0
+        assert not np.isnan(embeddings).any()

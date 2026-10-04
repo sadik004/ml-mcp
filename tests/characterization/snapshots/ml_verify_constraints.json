@@ -1,0 +1,7 @@
+{
+  "passed": "bool",
+  "total_rows": "int",
+  "total_violations": "int",
+  "violation_columns_count": "int",
+  "violations_summary": "list"
+}

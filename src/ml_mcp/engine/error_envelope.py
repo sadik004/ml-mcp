@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import difflib
 from typing import Any, Dict, List, Optional
+
 from ml_mcp.engine.json_sanitizer import sanitize_for_json
 
 
@@ -20,40 +21,73 @@ def suggest_close_matches(
 
 
 def format_error_envelope(
-    error_type: str,
-    message: str,
-    details: Optional[Dict[str, Any]] = None,
+    error: str | Exception | None = None,
+    message_or_tool: str = "",
+    details: Optional[Dict[str, Any] | List[str]] = None,
     candidates: Optional[List[str]] = None,
     exception: Optional[Exception] = None,
     retryable: bool = True,
+    *,
+    error_type: Optional[str] = None,
+    message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Formats an exception or validation error into a structured, self-healing JSON envelope.
 
-    Args:
-        error_type: Name or category of error (e.g. ValidationError, DataLeakageError).
-        message: Concise description of the issue.
-        details: Optional key-value pairs providing context (attempted feature, valid ranges).
-        candidates: Optional pool of valid column or model names to run fuzzy matching on.
-        exception: The underlying exception instance if caught.
-        retryable: Whether the agent can correct its parameters and retry immediately.
-
-    Returns:
-        JSON-sanitized structured error payload.
+    Supports both:
+    1. format_error_envelope(exc, "tool_name", candidates=["col1", "col2"])
+    2. format_error_envelope(error_type="ValidationError", message="msg", details={...})
     """
+    tool_name: Optional[str] = None
+    resolved_exception: Optional[Exception] = None
+    resolved_candidates: Optional[List[str]] = None
+    resolved_details: Dict[str, Any] = {}
+
+    if isinstance(error, Exception):
+        exc_instance = error
+        err_type = exc_instance.__class__.__name__
+        tool_name = message_or_tool
+        msg = f"{tool_name}: {exc_instance}" if tool_name else str(exc_instance)
+        resolved_exception = exc_instance
+        resolved_details = {"tool": tool_name}
+        if isinstance(details, dict):
+            resolved_details.update(details)
+        resolved_candidates = details if isinstance(details, list) else candidates
+    else:
+        err_type = error_type if error_type is not None else (str(error) if error is not None else "UnknownError")
+        msg = message if message is not None else message_or_tool
+        resolved_exception = exception
+        resolved_details = details if isinstance(details, dict) else {}
+        resolved_candidates = candidates
+
     suggestions: List[str] = []
-    if candidates and details and "attempted_column" in details:
-        suggestions = suggest_close_matches(details["attempted_column"], candidates)
+    if resolved_candidates and "attempted_column" in resolved_details:
+        suggestions = suggest_close_matches(str(resolved_details["attempted_column"]), resolved_candidates)
+
+    err_code = getattr(resolved_exception, "error_code", "INTERNAL_ERROR") if resolved_exception is not None else "INTERNAL_ERROR"
+    if resolved_exception is not None:
+        exc_details = getattr(resolved_exception, "details", None)
+        if isinstance(exc_details, dict):
+            resolved_details.update(exc_details)
+
+
+    step_name = tool_name or (resolved_details.get("tool") if isinstance(resolved_details, dict) else None)
+    remed = suggestions if suggestions else ["Verify input parameters and column names."]
 
     envelope: Dict[str, Any] = {
         "status": "error",
-        "error_type": error_type,
-        "message": message,
+        "error_type": err_type,
+        "error_code": err_code,
+        "message": msg,
+        "error_message": msg,
+        "failed_step": step_name,
         "retryable": retryable,
-        "details": details or {},
+        "details": resolved_details,
+        "inputs_provided": resolved_details,
         "suggestions": suggestions,
+        "remediation_suggestions": remed,
     }
 
-    if exception is not None:
-        envelope["exception_class"] = exception.__class__.__name__
+    if resolved_exception is not None:
+        envelope["exception_class"] = resolved_exception.__class__.__name__
 
     return sanitize_for_json(envelope)

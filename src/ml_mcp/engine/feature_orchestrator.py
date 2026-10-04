@@ -9,13 +9,15 @@ Coordinates all Phase 2 feature engineering engines:
 """
 from __future__ import annotations
 
-import os
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple
+import os
+from typing import Dict, List, Literal, Optional
+
 import joblib
 import numpy as np
 import pandas as pd
 
+from ml_mcp.config import get_settings
 from ml_mcp.engine.balancer import ClassBalancer
 from ml_mcp.engine.feature_pruner import GradientFeatureSelector
 from ml_mcp.engine.feature_synthesizer import (
@@ -42,15 +44,34 @@ class FeaturePipelineOrchestrator:
         task_type: Literal["classification", "regression"] = "classification",
         enable_synthesis: bool = True,
         enable_pruning: bool = True,
+        train_indices: Optional[List[int]] = None,
     ) -> FeaturePipelineReportDTO:
         """Executes all Phase 2 transformations and generates ready-to-train artifacts."""
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' not found in dataset.")
 
+        warnings: List[str] = []
         y = df[target_column]
         X_raw = df.drop(columns=[target_column]).copy()
         initial_features = list(X_raw.columns)
         initial_shape = [int(len(df)), int(len(initial_features))]
+
+        # Zero-Leakage Split Partitioning
+        if train_indices is not None:
+            train_idx = np.asarray(train_indices, dtype=int)
+        elif len(df) >= 20:
+            from sklearn.model_selection import train_test_split
+            train_idx, _ = train_test_split(
+                np.arange(len(df)),
+                test_size=0.20,
+                random_state=get_settings().random_state,
+                stratify=y if (task_type == "classification" and len(np.unique(y)) == 2) else None,
+            )
+        else:
+            train_idx = np.arange(len(df))
+
+        X_train = X_raw.iloc[train_idx]
+        y_train = y.iloc[train_idx]
 
         # 1. Feature Synthesis
         synthesized_cols: List[str] = []
@@ -58,18 +79,21 @@ class FeaturePipelineOrchestrator:
         if enable_synthesis:
             # Temporal Harmonics
             temp_trans = AutomaticTemporalTransformer()
-            X_synth = temp_trans.fit_transform(X_synth)
+            temp_trans.fit(X_train)
+            X_synth = temp_trans.transform(X_synth)
 
             # Latent Manifold Outliers
             latent_trans = LatentManifoldOutlierTransformer()
-            X_synth = latent_trans.fit_transform(X_synth)
+            latent_trans.fit(temp_trans.transform(X_train))
+            X_synth = latent_trans.transform(X_synth)
 
             synthesized_cols = [c for c in X_synth.columns if c not in initial_features]
 
         # 2. Zero-Leakage Defensive Preprocessor
         pipeline_builder = DefensivePipelineBuilder()
-        preprocessor = pipeline_builder.build_pipeline(X_synth, target_column=None)
-        X_transformed = preprocessor.fit_transform(X_synth)
+        preprocessor = pipeline_builder.build_pipeline(X_synth.iloc[train_idx], target_column=None)
+        preprocessor.fit(X_synth.iloc[train_idx])
+        X_transformed = preprocessor.transform(X_synth)
 
         if hasattr(X_transformed, "toarray"):
             X_transformed = X_transformed.toarray()
@@ -87,9 +111,9 @@ class FeaturePipelineOrchestrator:
 
         # 3. Class Balancing Weights
         class_weights: Optional[Dict[str, float]] = None
-        if task_type == "classification" and len(np.unique(y)) >= 2:
+        if task_type == "classification" and len(np.unique(y_train)) >= 2:
             balancer = ClassBalancer()
-            raw_weights = balancer.compute_class_weights(y)
+            raw_weights = balancer.compute_class_weights(y_train)
             class_weights = {str(k): round(float(v), 4) for k, v in raw_weights.items()}
 
         # 4. Out-of-Fold Permutation Feature Pruning
@@ -98,13 +122,16 @@ class FeaturePipelineOrchestrator:
         if enable_pruning and X_transformed_df.shape[1] > 8:
             try:
                 selector = GradientFeatureSelector(task_type=task_type)
-                X_pruned = selector.fit_transform(X_transformed_df, y)
+                selector.fit(X_transformed_df.iloc[train_idx], y_train)
+                X_pruned = selector.transform(X_transformed_df)
                 pruning_rep = selector.get_report()
                 pruned_features = pruning_rep.dropped_features
                 retained_features = pruning_rep.selected_features
                 X_final = pd.DataFrame(X_pruned, columns=retained_features, index=df.index)
             except Exception as e:
-                logger.warning(f"Feature pruning fallback: {e}")
+                msg = f"Feature pruning fallback: {e}"
+                logger.warning(msg)
+                warnings.append(msg)
                 X_final = X_transformed_df
         else:
             X_final = X_transformed_df
@@ -131,6 +158,8 @@ class FeaturePipelineOrchestrator:
                     "task_type": task_type,
                     "class_weights": class_weights,
                     "retained_features": retained_features,
+                    "train_samples_count": len(train_idx),
+                    "zero_leakage_split": True,
                 }, mf, indent=2)
         except Exception as e:
             logger.warning(f"Could not save feature metadata: {e}")
@@ -177,4 +206,5 @@ class FeaturePipelineOrchestrator:
             preprocessor_artifact_path=preprocessor_path,
             transformed_dataset_path=dataset_path,
             receipt_card=receipt_card,
+            warnings=warnings,
         )

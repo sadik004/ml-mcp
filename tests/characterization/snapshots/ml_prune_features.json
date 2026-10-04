@@ -1,0 +1,5 @@
+{
+  "data": "dict",
+  "processed_csv_path": "str",
+  "status": "str"
+}

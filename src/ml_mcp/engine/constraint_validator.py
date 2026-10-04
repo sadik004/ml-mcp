@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 
+from ml_mcp.config import get_settings
 from ml_mcp.schemas.audit import (
     ColumnConstraintViolationDTO,
     ConstraintValidationReportDTO,
@@ -34,7 +36,7 @@ class ConstraintValidator:
             return 0.0
 
         if n > 500:
-            rng = np.random.RandomState(42)
+            rng = np.random.RandomState(get_settings().random_state)
             clean = rng.choice(clean, 500, replace=False)
             n = len(clean)
 
@@ -51,7 +53,7 @@ class ConstraintValidator:
         # Avoid outer product explosion: sample pairs if product > 50,000
         total_pairs = len(x_left) * len(x_right)
         if total_pairs > 50000:
-            rng = np.random.RandomState(42)
+            rng = np.random.RandomState(get_settings().random_state)
             i_idx = rng.choice(len(x_left), 200)
             j_idx = rng.choice(len(x_right), 200)
             xi = x_left[i_idx, np.newaxis]

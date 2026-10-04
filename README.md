@@ -52,12 +52,12 @@ From raw tabular data auditing to cross-validated model tournaments, Optuna Baye
 
 | Classic Agent ML Failures | `ml-mcp` Defensive Guarantees |
 |---|---|
-| **Catastrophic Target Leakage:** Scaling and imputer statistics computed across the whole dataset before splitting. | **Zero-Leakage Invariant:** All transformations fit strictly inside cross-validation training folds using `DefensivePipelineBuilder`. |
-| **Accuracy Paradox:** Naive 99% accuracy on imbalanced data by simply predicting the majority class. | **Cost-Sensitive Learning (Anti-SMOTE):** Automatic fallback to Macro-F1, ROC-AUC, or PR-AUC metrics, coupled with exact inverse-frequency sample weights ($w_i = \frac{N}{K \cdot N_{y_i}}$) and Random Resampling with Shrinkage. |
-| **Silent NaN Inferences:** Production models crash when unobserved missing values appear in future inference requests. | **Omnipresent Median/Mode Imputers:** Every pipeline retains a fallback imputer regardless of whether training data had NaNs. |
-| **Context Window Exhaustion:** Raw arrays, massive correlation grids, and thousands of predictions blow up LLM token limits. | **Token Shield Architecture:** `view="compact"` returns $\le 15$ essential metrics; `view="detailed"` provides complete distributions. |
-| **Scientific Type JSON Crashes:** NumPy floats, Pandas Series, and NaNs trigger serialization errors. | **Recursive JSON Sanitizer:** Seamlessly converts NumPy scalars, NaNs, and Datetimes up to depth 30 before serialization. |
-| **Arbitrary 0.500 Decision Thresholds:** Blindly applying 0.500 thresholds despite asymmetric financial costs (e.g., fraud vs churn). | **Asymmetric Cost Matrix Optimizer:** Computes exact optimal cutoff boundaries minimizing real-world dollar loss. |
+| **Catastrophic Target Leakage:** Scaling and imputer statistics computed across the whole dataset before splitting. | **Zero-Leakage Invariant:** All transformations fit strictly inside cross-validation training folds using `DefensivePipelineBuilder`. [test: tests/verification/test_reproduce_audit_findings.py::test_feature_pipeline_zero_leakage] |
+| **Accuracy Paradox:** Naive 99% accuracy on imbalanced data by simply predicting the majority class. | **Cost-Sensitive Learning (Anti-SMOTE):** Automatic fallback to Macro-F1, ROC-AUC, or PR-AUC metrics, coupled with exact inverse-frequency sample weights ($w_i = \frac{N}{K \cdot N_{y_i}}$) and Random Resampling with Shrinkage. [test: tests/verification/test_reproduce_audit_findings.py::test_guard_f_tournament_reports_warnings_on_failures] |
+| **Silent NaN Inferences:** Production models crash when unobserved missing values appear in future inference requests. | **Omnipresent Median/Mode Imputers:** Every pipeline retains a fallback imputer regardless of whether training data had NaNs. [test: tests/verification/test_artifact_roundtrip.py::test_export_pipeline_mixed_types_roundtrip] |
+| **Context Window Exhaustion:** Raw arrays, massive correlation grids, and thousands of predictions blow up LLM token limits. | **Token Shield Architecture:** `view="compact"` returns $\le 15$ essential metrics; `view="detailed"` provides complete distributions. [test: tests/unit/test_server.py::test_ml_ping_diagnostics] |
+| **Scientific Type JSON Crashes:** NumPy floats, Pandas Series, and NaNs trigger serialization errors. | **Recursive JSON Sanitizer:** Seamlessly converts NumPy scalars, NaNs, and Datetimes up to depth 30 before serialization. [test: tests/unit/routers/test_router_contracts.py::test_router_json_sanitization] |
+| **Arbitrary 0.500 Decision Thresholds:** Blindly applying 0.500 thresholds despite asymmetric financial costs (e.g., fraud vs churn). | **Asymmetric Cost Matrix Optimizer:** Computes exact optimal cutoff boundaries minimizing real-world dollar loss. [test: tests/verification/test_out_of_sample.py::test_permuted_labels_tune_threshold_and_errors] |
 
 ---
 
@@ -300,8 +300,25 @@ pytest tests/ -v
 - `tests/unit/engine/test_dashboard_generator.py`: Standalone HTML/SVG generation.
 - `tests/integration/test_full_pipeline.py`: Complete multi-engine workflow test.
 - `tests/integration/test_smoke_script.py`: Automated assertion of the 15-second smoke test script.
+- `tests/verification/`: 37 mathematical verification tests (G1–G10 machine quality gates).
+
+### Enterprise Automated Quality Gates (10/10 PASS)
+All code changes must pass the machine-checked gate runner (`python scripts/quality_gate.py`):
+1. **G1: Zero Silent Handlers** (`check_no_silent_except.py`)
+2. **G2: Zero Hardcoded Metrics & Zero Guarantee Slack** (AST Scanner)
+3. **G3: Honest Out-of-Sample Evaluation** (Permuted-label invariance)
+4. **G4: Visible Fallbacks in Warnings Audit** (`warnings: List[str]`)
+5. **G5: Real Fitted Estimators Round-Trip** (`joblib` persistence)
+6. **G6: Statistical Guarantees Honesty** (Wilson score CI & min-n bounds)
+7. **G7: Test Suite 100% Green & Coverage >= 85%**
+8. **G8: Ruff Linter & Strict Mypy Typing Gate** (exit code 0)
+9. **G9: 3-Tier Clean Architecture Invariants** (Protocol repository IO & seed hygiene)
+10. **G10: Test-Backed Documentation Integrity** (Every claim tagged and verified)
+
+Full audited scorecard: [docs/rca/final_scorecard.md](docs/rca/final_scorecard.md).
 
 ---
+
 
 ## 🐳 Production Deployment with Docker & FastAPI
 

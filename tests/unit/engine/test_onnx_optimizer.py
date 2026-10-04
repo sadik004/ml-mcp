@@ -23,3 +23,14 @@ def test_onnx_optimizer_conversion_and_latency():
     assert len(onnx_bytes) > 0
     assert p95_ms > 0.0
     assert p99_ms >= p95_ms
+
+
+def test_onnx_optimizer_dataframe_input():
+    import pandas as pd
+    X, y = make_classification(n_samples=50, n_features=4, random_state=42)
+    df = pd.DataFrame(X, columns=["a", "b", "c", "d"])
+    clf = LogisticRegression().fit(df, y)
+    optimizer = ONNXOptimizer()
+    onnx_bytes, p95_ms, p99_ms = optimizer.convert_and_benchmark(clf, df)
+    assert len(onnx_bytes) > 0
+    assert p95_ms >= 0.0

@@ -1,0 +1,8 @@
+{
+  "class_thresholds": "dict",
+  "error_rate": "float",
+  "flagged_count": "int",
+  "task_type": "str",
+  "total_errors": "int",
+  "total_samples": "int"
+}

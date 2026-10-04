@@ -86,3 +86,21 @@ def test_treeshap_zero_fake_permutation_fallback():
     # Critical: verify NO fake 1.0 dummy weights
     for feat_name, imp in report["top_features"].items():
         assert imp != 1.0 or len(report["top_features"]) == 1
+
+
+def test_treeshap_local_waterfall_non_tree():
+    from sklearn.linear_model import LogisticRegression
+    X, y = make_classification(n_samples=50, n_features=4, random_state=42)
+    feature_names = [f"f_{i}" for i in range(4)]
+    X_df = pd.DataFrame(X, columns=feature_names)
+    clf = LogisticRegression().fit(X_df, y)
+
+    explainer = TreeShapExplainer()
+    instance_report = explainer.explain_instance(
+        model=clf,
+        x_row=X_df.iloc[[0]],
+        background_X=X_df,
+        top_k=3,
+    )
+    assert "waterfall_steps" in instance_report
+    assert len(instance_report["waterfall_steps"]) <= 3

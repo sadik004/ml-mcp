@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import Field
+
 from ml_mcp.schemas.base import BaseDTO
 
 
@@ -89,7 +91,7 @@ class CRCReportDTO(BaseDTO):
 
     loss_function: str = Field(description="Type of controlled loss: misclassification, fnr, or asymmetric_cost")
     target_risk: float = Field(ge=0.0, le=1.0, description="User-specified maximum risk bound alpha: E[loss] <= alpha")
-    empirical_risk: float = Field(description="Empirical risk evaluated on calibration/validation split")
+    empirical_risk: Optional[float] = Field(default=None, description="Empirical risk evaluated on calibration/validation split")
     calibrated_lambda: float = Field(description="Optimal threshold parameter lambda achieving risk control")
     guarantee_satisfied: bool = Field(description="True if empirical risk <= target_risk")
     total_cal_samples: int = Field(ge=1, description="Number of calibration samples used")
@@ -99,17 +101,29 @@ class CRCReportDTO(BaseDTO):
     human_triage_count: int = Field(ge=0, description="Total samples routed to human review")
     mondrian_conditional: bool = Field(default=False, description="True if group/class-conditional calibration applied")
     per_class_thresholds: Optional[Dict[str, float]] = Field(default=None, description="Per-class lambda thresholds if Mondrian")
+    holdout_risk_ucb: Optional[float] = Field(default=None, description="Upper confidence bound (95%) on holdout risk")
+    holdout_check_passed: Optional[bool] = Field(default=None, description="True if holdout_risk_ucb <= target_risk")
+    coverage_ci_low: Optional[float] = Field(default=None, description="Lower bound of Wilson score confidence interval")
+    coverage_ci_high: Optional[float] = Field(default=None, description="Upper bound of Wilson score confidence interval")
+    warnings: List[str] = Field(default_factory=list, description="Audit warnings regarding sample size or undefined metrics")
+    evaluation_mode: str = Field(default="out_of_sample", description="Evaluation scheme applied")
 
     def to_compact(self) -> Dict[str, Any]:
         return {
             "loss_function": self.loss_function,
             "target_risk": round(self.target_risk, 4),
-            "empirical_risk": round(self.empirical_risk, 4),
+            "empirical_risk": round(self.empirical_risk, 4) if self.empirical_risk is not None else None,
             "calibrated_lambda": round(self.calibrated_lambda, 4),
             "guarantee_satisfied": self.guarantee_satisfied,
             "average_set_size": round(self.average_set_size, 2),
             "ambiguity_rate": round(self.ambiguity_rate, 4),
             "human_triage_count": self.human_triage_count,
+            "coverage_ci_low": self.coverage_ci_low,
+            "coverage_ci_high": self.coverage_ci_high,
+            "holdout_risk_ucb": round(self.holdout_risk_ucb, 4) if self.holdout_risk_ucb is not None else None,
+            "holdout_check_passed": self.holdout_check_passed,
+            "evaluation_mode": self.evaluation_mode,
+            "warnings": self.warnings,
         }
 
 class SafetyCertificateReportDTO(BaseDTO):
@@ -124,9 +138,14 @@ class SafetyCertificateReportDTO(BaseDTO):
     raw_ece: float = Field(description="Raw Expected Calibration Error before Platt/Beta scaling")
     calibrated_ece: float = Field(description="Calibrated Expected Calibration Error")
     top_shap_drivers: List[str] = Field(default_factory=list, description="Top decision-driving features by TreeSHAP")
-    conformal_coverage_pct: float = Field(description="Realized empirical coverage percentage (target 95%)")
-    conformal_singleton_pct: float = Field(description="Percentage of samples with unique non-ambiguous prediction set")
-    ood_cutoff_boundary: float = Field(description="Helmholtz Free Energy 99th percentile cutoff")
+    conformal_coverage_pct: Optional[float] = Field(default=None, description="Realized empirical coverage percentage (target 95%)")
+    conformal_singleton_pct: Optional[float] = Field(default=None, description="Percentage of samples with unique non-ambiguous prediction set")
+    coverage_ci_low: Optional[float] = Field(default=None, description="Wilson score CI lower bound for coverage")
+    coverage_ci_high: Optional[float] = Field(default=None, description="Wilson score CI upper bound for coverage")
+    ood_cutoff_boundary: Optional[float] = Field(default=None, description="OOD anomaly cutoff boundary")
+    in_sample: bool = Field(default=False, description="True if metrics are in-sample diagnostics rather than independent out-of-fold certification")
+    training_mode: str = Field(default="persisted", description="'persisted' or 'ephemeral'")
+    certification_status: str = Field(default="certified", description="'certified', 'limited', or 'refused'")
     warnings: List[str] = Field(default_factory=list, description="Non-fatal warnings or diagnostic notices")
     safety_card: str = Field(description="Formatted human-readable Markdown safety certificate card")
 
@@ -137,7 +156,9 @@ class SafetyCertificateReportDTO(BaseDTO):
             "false_positive_reduction_pct": round(self.false_positive_reduction_pct, 1),
             "false_negative_reduction_pct": round(self.false_negative_reduction_pct, 1),
             "calibrated_ece": round(self.calibrated_ece * 100, 2),
-            "conformal_coverage_pct": round(self.conformal_coverage_pct, 1),
+            "conformal_coverage_pct": round(self.conformal_coverage_pct, 1) if self.conformal_coverage_pct is not None else None,
+            "coverage_ci_low": self.coverage_ci_low,
+            "coverage_ci_high": self.coverage_ci_high,
             "top_shap_drivers": self.top_shap_drivers[:5],
             "warnings": self.warnings,
             "safety_card": self.safety_card,

@@ -1,0 +1,6 @@
+{
+  "detector_name": "str",
+  "ood_detected_count": "int",
+  "ood_ratio": "float",
+  "total_samples": "int"
+}

@@ -1,0 +1,13 @@
+{
+  "adaptive_ece": "float",
+  "brier_score_lift": "float",
+  "conformal_coverage": "float",
+  "ece_lift": "float",
+  "is_well_calibrated": "bool",
+  "method": "str",
+  "post_brier_score": "float",
+  "post_ece": "float",
+  "pre_brier_score": "float",
+  "pre_ece": "float",
+  "status": "str"
+}

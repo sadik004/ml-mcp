@@ -1,0 +1,5 @@
+# Allowlist for check_no_silent_except.py (Phase P4)
+# Format: <relative_path>:<line_number_or_pattern>:<reason>
+# Any unlisted silent exception handler is classified as catastrophic malpractice.
+
+ml_mcp/config.py:try_drive_probe:Writable probe test file deletion cleanup

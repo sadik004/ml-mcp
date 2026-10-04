@@ -1,12 +1,13 @@
 """High-performance collinearity filter using Spectral SVD conditioning, Ridge-regularized VIF, and Belsley variance decomposition."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional
+
 import numpy as np
 import pandas as pd
 from sklearn.feature_selection import f_classif
 
-from ml_mcp.schemas.audit import CollinearPairDTO, CollinearityReportDTO
+from ml_mcp.schemas.audit import CollinearityReportDTO
 
 
 class CollinearityFilter:

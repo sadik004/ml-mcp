@@ -1,0 +1,8 @@
+{
+  "drift_status": "str",
+  "drifted_features": "list",
+  "ks_p_value": "float",
+  "psi_score": "float",
+  "retraining_recommended": "bool",
+  "wasserstein_distance": "float"
+}

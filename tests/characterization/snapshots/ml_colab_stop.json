@@ -1,0 +1,6 @@
+{
+  "error": "NoneType",
+  "output": "str",
+  "session": "str",
+  "success": "bool"
+}

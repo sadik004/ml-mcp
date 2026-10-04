@@ -1,0 +1,15 @@
+{
+  "class_imbalance_ratio": "float",
+  "column_count": "int",
+  "duplicate_rows": "int",
+  "group_column_candidate": "NoneType",
+  "has_temporal_order": "bool",
+  "id_memorization_columns": "list",
+  "infinite_count": "int",
+  "missing_ratio": "float",
+  "recommended_metric": "str",
+  "recommended_split_strategy": "str",
+  "row_count": "int",
+  "sentinel_count": "int",
+  "target_skewness": "NoneType"
+}

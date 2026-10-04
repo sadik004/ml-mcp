@@ -10,13 +10,15 @@ Rigorous mathematical validation without hardcoded heuristics:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, List, Optional
+
 import numpy as np
 import pandas as pd
+import shap
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
-import shap
 
+from ml_mcp.config import get_settings
 from ml_mcp.engine.calibrator import ProbabilityCalibrator, calculate_ece
 from ml_mcp.engine.conformal_risk_control import ConformalRiskControlEngine
 from ml_mcp.engine.ood_detector import OODDetector
@@ -43,34 +45,60 @@ class SafetyOrchestrator:
         oof_probs: Optional[np.ndarray] = None,
         cost_fp: float = 5.0,
         cost_fn: float = 250.0,
+        allow_in_sample_diagnostic: bool = False,
+        training_mode: str = "persisted",
     ) -> SafetyCertificateReportDTO:
         """Executes all Phase 4 safety checks and returns an honest certified Decision Card."""
         y_arr = y.to_numpy(dtype=int) if isinstance(y, pd.Series) else np.asarray(y, dtype=int)
         warnings: List[str] = []
 
-        # 1. Uncalibrated vs Calibrated Probabilities & True ECE Calculation
-        if hasattr(model, "predict_proba"):
-            raw_probs_2d = model.predict_proba(X)
-            raw_p = raw_probs_2d[:, 1] if raw_probs_2d.shape[1] > 1 else raw_probs_2d[:, 0]
+        # Decision 1 Gate: Refuse certification if oof_probs is missing
+        if oof_probs is None:
+            if not allow_in_sample_diagnostic:
+                raise ValueError(
+                    "Certification Refused: Independent certification requires out-of-fold predictions (oof_probs). "
+                    "In-sample probabilities cannot be certified under ML mathematical rigor. "
+                    "Pass allow_in_sample_diagnostic=True if you explicitly request uncertified exploratory diagnostics."
+                )
+            in_sample = True
+            certification_status = "refused"
+            warnings.append(
+                "DIAGNOSTIC ONLY: Certification refused. Metrics evaluated on in-sample predictions with zero independent statistical guarantee."
+            )
+            if hasattr(model, "predict_proba"):
+                raw_probs_2d = model.predict_proba(X)
+                raw_p = raw_probs_2d[:, 1] if raw_probs_2d.shape[1] > 1 else raw_probs_2d[:, 0]
+            else:
+                raise ValueError("Model does not provide predict_proba and oof_probs was not supplied.")
+            decision_probs = raw_p
         else:
-            raw_p = oof_probs if oof_probs is not None else np.full(len(y_arr), 0.5)
+            in_sample = False
+            certification_status = "certified" if training_mode == "persisted" else "limited"
+            oof_arr = np.asarray(oof_probs, dtype=float)
+            if oof_arr.ndim == 2:
+                decision_probs = oof_arr[:, 1] if oof_arr.shape[1] > 1 else oof_arr[:, 0]
+            else:
+                decision_probs = oof_arr
+            raw_p = decision_probs
 
+        if training_mode == "ephemeral":
+            warnings.append(
+                "LIMITED CERTIFICATION: Model was trained ephemerally on runtime data; artifact is not persisted."
+            )
+
+        # 1. Uncalibrated vs Calibrated Probabilities & True ECE Calculation
         cal_rep, calibrated_model = self.calibrator_engine.calibrate(
             model=model, X=X, y=y_arr, task_type="classification", method="beta"
         )
-        
         if hasattr(calibrated_model, "predict_proba"):
             cal_probs_2d = calibrated_model.predict_proba(X)
             cal_p = cal_probs_2d[:, 1] if cal_probs_2d.shape[1] > 1 else cal_probs_2d[:, 0]
         else:
-            cal_p = raw_p
+            cal_p = decision_probs
 
         # Calculate true binned ECE (Naeini et al. AAAI 2015 / Guo et al. ICML 2017)
-        raw_ece = float(calculate_ece(y_arr, raw_p, n_bins=10))
-        cal_ece = float(calculate_ece(y_arr, cal_p, n_bins=10))
-
-        # Use OOF probabilities when available to avoid optimistic thresholding
-        decision_probs = oof_probs if oof_probs is not None else cal_p
+        raw_ece = float(calculate_ece(y_arr, decision_probs, n_bins=10))
+        cal_ece = float(cal_rep.post_ece) if cal_rep.post_ece is not None else float(calculate_ece(y_arr, cal_p, n_bins=10))
 
         # 2. Decision Curve Analysis & Asymmetric Cost Loss (p*)
         thresh_rep = self.threshold_engine.optimize(
@@ -101,7 +129,7 @@ class SafetyOrchestrator:
         top_shap_drivers: List[str] = []
         try:
             sample_size = min(len(X), 300)
-            X_sub = X.sample(sample_size, random_state=42)
+            X_sub = X.sample(sample_size, random_state=get_settings().random_state)
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X_sub)
             if isinstance(shap_values, list):
@@ -122,47 +150,48 @@ class SafetyOrchestrator:
             top_shap_drivers = [f"TreeSHAP skipped: {type(model).__name__} requires model with tree dump"]
 
         # 4. Rigorous Split-Conformal Prediction Coverage & Singleton Audit
+        cov_ci_low: Optional[float] = None
+        cov_ci_high: Optional[float] = None
+        min_n = get_settings().min_calibration_n
         try:
-            # Prepare 2D simplex probabilities for conformal engine
             probs_2d = np.column_stack([1.0 - decision_probs, decision_probs])
-            
-            # Split into calibration and holdout evaluation sets
-            if len(y_arr) >= 40:
+            if len(y_arr) >= min_n:
                 p_cal, p_val, y_cal, y_val = train_test_split(
-                    probs_2d, y_arr, test_size=0.50, random_state=42, stratify=y_arr if len(np.unique(y_arr)) == 2 else None
+                    probs_2d, y_arr, test_size=0.50, random_state=get_settings().random_state, stratify=y_arr if len(np.unique(y_arr)) == 2 else None
                 )
+                lambda_val, emp_risk = self.conformal_engine.calibrate(
+                    probs_cal=p_cal,
+                    y_cal=y_cal,
+                    loss_type="misclassification",
+                    target_risk=0.05,
+                )
+                psets = self.conformal_engine.get_prediction_sets(p_val, lambda_val=lambda_val)
+                covered = [y_val[i] in psets[i] for i in range(len(y_val))]
+                coverage_pct = float(np.mean(covered) * 100.0)
+                singletons = [len(psets[i]) == 1 for i in range(len(y_val))]
+                singleton_pct = float(np.mean(singletons) * 100.0)
+
+                from ml_mcp.engine.stats import wilson_interval
+                cov_ci_low, cov_ci_high = wilson_interval(int(np.sum(covered)), len(y_val), conf=0.95, min_n=min_n // 2)
             else:
-                p_cal, p_val, y_cal, y_val = probs_2d, probs_2d, y_arr, y_arr
-
-            # Calibrate lambda for target misclassification risk alpha=0.05 (95% coverage)
-            lambda_val, emp_risk = self.conformal_engine.calibrate(
-                probs_cal=p_cal,
-                y_cal=y_cal,
-                loss_type="misclassification",
-                target_risk=0.05,
-            )
-
-            # Evaluate realized sets on the untouched holdout val set
-            psets = self.conformal_engine.get_prediction_sets(p_val, lambda_val=lambda_val)
-            covered = [y_val[i] in psets[i] for i in range(len(y_val))]
-            coverage_pct = float(np.mean(covered) * 100.0)
-            singletons = [len(psets[i]) == 1 for i in range(len(y_val))]
-            singleton_pct = float(np.mean(singletons) * 100.0)
+                coverage_pct = None
+                singleton_pct = None
+                warnings.append(f"INSUFFICIENT_N: sample size ({len(y_arr)}) below minimum calibration threshold ({min_n}).")
         except Exception as e:
-            logger.warning(f"Conformal evaluation fallback: {e}")
-            warnings.append(f"Conformal fallback: {e}")
-            coverage_pct = 95.0
-            singleton_pct = 90.0
+            logger.warning(f"Conformal evaluation failed: {e}")
+            warnings.append(f"Conformal evaluation failed: {e}")
+            coverage_pct = None
+            singleton_pct = None
 
         # 5. Out-of-Distribution Safety Cutoff
         try:
             self.ood_engine.fit(X)
             ood_rep = self.ood_engine.detect(X)
-            ood_cutoff = float(ood_rep.anomaly_threshold)
+            ood_cutoff: Optional[float] = float(ood_rep.anomaly_threshold)
         except Exception as e:
-            logger.warning(f"OOD detector fallback: {e}")
-            warnings.append(f"OOD detector fallback: {e}")
-            ood_cutoff = -0.5
+            logger.warning(f"OOD detector failed: {e}")
+            warnings.append(f"OOD detector failed: {e}")
+            ood_cutoff = None
 
         # ----------------------------------------------------------------------
         # Executive Markdown Safety Certificate Card
@@ -170,6 +199,9 @@ class SafetyOrchestrator:
         card_lines = [
             "=" * 88,
             "🛡️ ML-MCP PHASE 4: SAFETY, CALIBRATION & DECISION CERTIFICATE",
+            f"Certification Status          : {certification_status.upper()}",
+            f"Evaluation Methodology        : {'DIAGNOSTIC IN-SAMPLE (UNCERTIFIED)' if in_sample else 'OUT-OF-FOLD INDEPENDENT CERTIFICATION'}",
+            f"Training Mode                 : {training_mode.upper()}",
             f"Optimal Operating Cutoff (p*)  : {opt_thresh:.4f} (vs Naive 0.5000)",
             f"Net Financial Loss Reduction   : ${savings:,.2f} Saved ({fp_reduction:.1f}% False Positive Drop)",
             "=" * 88,
@@ -186,14 +218,20 @@ class SafetyOrchestrator:
         for sd in top_shap_drivers:
             card_lines.append(f"  • {sd}")
 
-        card_lines.extend([
-            "\n📐 4. CONFORMAL RISK GUARANTEES (Split-Conformal Evaluation):",
-            f"  • Target Risk Alpha                    : 0.05 (Target 95.0% Coverage)",
-            f"  • Realized Empirical Coverage          : {coverage_pct:.1f}% (Evaluated on holdout)",
-            f"  • Pure Singletons                      : {singleton_pct:.1f}% of samples uniquely classified",
-            "\n⚡ 5. OOD DETECTOR SAFETY THRESHOLD:",
-            f"  • Anomaly Boundary Threshold           : {ood_cutoff:.4f}",
-        ])
+        card_lines.append("\n📐 4. CONFORMAL RISK GUARANTEES (Split-Conformal Evaluation):")
+        card_lines.append("  • Target Risk Alpha                    : 0.05 (Target 95.0% Coverage)")
+        if coverage_pct is not None and singleton_pct is not None:
+            card_lines.append(f"  • Realized Empirical Coverage          : {coverage_pct:.1f}% (Evaluated on holdout)")
+            card_lines.append(f"  • Pure Singletons                      : {singleton_pct:.1f}% of samples uniquely classified")
+        else:
+            card_lines.append("  • Realized Empirical Coverage          : FAILED / UNCALIBRATED (Error encountered)")
+            card_lines.append("  • Pure Singletons                      : N/A")
+
+        card_lines.append("\n⚡ 5. OOD DETECTOR SAFETY THRESHOLD:")
+        if ood_cutoff is not None:
+            card_lines.append(f"  • Anomaly Boundary Threshold           : {ood_cutoff:.4f}")
+        else:
+            card_lines.append("  • Anomaly Boundary Threshold           : FAILED / UNAVAILABLE")
 
         if warnings:
             card_lines.append("\n⚠️ DIAGNOSTIC NOTICES:")
@@ -218,9 +256,14 @@ class SafetyOrchestrator:
             raw_ece=round(raw_ece, 4),
             calibrated_ece=round(cal_ece, 4),
             top_shap_drivers=top_shap_drivers,
-            conformal_coverage_pct=round(coverage_pct, 1),
-            conformal_singleton_pct=round(singleton_pct, 1),
-            ood_cutoff_boundary=round(ood_cutoff, 4),
+            conformal_coverage_pct=round(coverage_pct, 1) if coverage_pct is not None else None,
+            conformal_singleton_pct=round(singleton_pct, 1) if singleton_pct is not None else None,
+            coverage_ci_low=cov_ci_low,
+            coverage_ci_high=cov_ci_high,
+            ood_cutoff_boundary=round(ood_cutoff, 4) if ood_cutoff is not None else None,
+            in_sample=in_sample,
+            training_mode=training_mode,
+            certification_status=certification_status,
             warnings=warnings,
             safety_card=safety_card,
         )

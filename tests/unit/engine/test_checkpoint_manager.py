@@ -38,3 +38,13 @@ def test_checkpoint_manager_lineage_metadata(tmp_path):
     assert lineage.row_count == 500
     assert lineage.random_seed == 42
     assert (tmp_path / "checkpoints" / "lineage_job_01_lineage.json").exists()
+
+
+def test_checkpoint_manager_create_lineage_df(tmp_path):
+    import pandas as pd
+    manager = CheckpointManager(storage_root=str(tmp_path))
+    df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    lineage = manager.create_lineage(df, random_seed=42)
+    assert isinstance(lineage, LineageDTO)
+    assert lineage.row_count == 3
+    assert lineage.column_count == 2

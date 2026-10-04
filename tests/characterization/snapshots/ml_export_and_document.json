@@ -1,0 +1,6 @@
+{
+  "joblib_path": "str",
+  "onnx_path": "str",
+  "p95_latency_ms": "float",
+  "p99_latency_ms": "float"
+}

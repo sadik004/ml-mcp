@@ -11,6 +11,27 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def _apply_skl2onnx_compatibility_patch() -> None:
+    """Fixes skl2onnx issue where mixed bool/uint8 lists in TreeEnsembleClassifier crash on ONNX 1.16+."""
+    try:
+        import skl2onnx.common._container as container_mod
+        if getattr(container_mod.ModelComponentContainer, "_patched_onnx_bool_fix", False):
+            return
+        orig_add_node = container_mod.ModelComponentContainer.add_node
+
+        def patched_add_node(self, op_type, inputs, outputs, op_domain="", op_version=None, name=None, **attrs):
+            for k, v in list(attrs.items()):
+                if isinstance(v, list) and any(isinstance(x, (bool, getattr(container_mod.np, "bool_", bool))) for x in v):
+                    if any(isinstance(x, (int, getattr(container_mod.np, "integer", int))) for x in v):
+                        attrs[k] = [int(x) if isinstance(x, (bool, getattr(container_mod.np, "bool_", bool))) else x for x in v]
+            return orig_add_node(self, op_type, inputs, outputs, op_domain=op_domain, op_version=op_version, name=name, **attrs)
+
+        container_mod.ModelComponentContainer.add_node = patched_add_node
+        container_mod.ModelComponentContainer._patched_onnx_bool_fix = True
+    except Exception as exc:
+        logger.debug("skl2onnx patch skipped: %s", exc)
+
+
 class ONNXOptimizer:
     """Converts models to ONNX graph with Level-3 graph fusion and benchmarks P95/P99 latency.
 
@@ -21,6 +42,7 @@ class ONNXOptimizer:
 
     def __init__(self, benchmark_samples: int = 100) -> None:
         self.benchmark_samples = benchmark_samples
+        _apply_skl2onnx_compatibility_patch()
 
     def convert_and_benchmark(
         self,
@@ -52,7 +74,7 @@ class ONNXOptimizer:
                     initial_type = [("float_input", FloatTensorType([None, num_features]))]
                     onx = onnxmltools.convert_lightgbm(model, initial_types=initial_type)
                     onnx_bytes = onx.SerializeToString()
-                except Exception as lgb_err:
+                except Exception:
                     from skl2onnx import convert_sklearn
                     from skl2onnx.common.data_types import FloatTensorType
                     initial_type = [("float_input", FloatTensorType([None, num_features]))]
@@ -65,7 +87,7 @@ class ONNXOptimizer:
                     initial_type = [("float_input", FloatTensorType([None, num_features]))]
                     onx = onnxmltools.convert_xgboost(model, initial_types=initial_type)
                     onnx_bytes = onx.SerializeToString()
-                except Exception as xgb_err:
+                except Exception:
                     from skl2onnx import convert_sklearn
                     from skl2onnx.common.data_types import FloatTensorType
                     initial_type = [("float_input", FloatTensorType([None, num_features]))]

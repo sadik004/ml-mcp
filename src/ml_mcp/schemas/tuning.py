@@ -1,8 +1,10 @@
 """Hyperparameter Tuning, Probability Calibration, and Decision Threshold DTOs."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
+
 from pydantic import Field
+
 from ml_mcp.schemas.base import BaseDTO
 
 
@@ -37,10 +39,10 @@ class CalibrationReportDTO(BaseDTO):
     """Report measuring probability calibration improvement (Beta / Platt / Isotonic / Temperature)."""
 
     method: str = Field(description="beta (Beta Calibration), sigmoid (Platt Scaling), isotonic, or temperature")
-    pre_brier_score: float = Field(default=0.0, ge=0.0, description="Brier score before calibration")
-    post_brier_score: float = Field(default=0.0, ge=0.0, description="Brier score after calibration")
-    brier_score_lift: float = Field(default=0.0, description="Improvement delta (positive is better)")
-    is_well_calibrated: bool = Field(default=False, description="True if post-calibration Brier score <= 0.15")
+    pre_brier_score: Optional[float] = Field(default=None, description="Brier score before calibration")
+    post_brier_score: Optional[float] = Field(default=None, description="Brier score after calibration")
+    brier_score_lift: Optional[float] = Field(default=None, description="Improvement delta (positive is better)")
+    is_well_calibrated: Optional[bool] = Field(default=None, description="True if post-calibration Brier score <= 0.15 and post_ece <= 0.10")
     status: Optional[str] = Field(default=None, description="Execution status or skipped notes")
     pre_ece: Optional[float] = Field(default=None, description="Expected Calibration Error before calibration")
     post_ece: Optional[float] = Field(default=None, description="Expected Calibration Error after calibration")
@@ -49,15 +51,30 @@ class CalibrationReportDTO(BaseDTO):
     temperature: Optional[float] = Field(default=None, description="Optimized scaling temperature T (Guo et al. 2017)")
     conformal_coverage: Optional[float] = Field(default=None, description="Empirical marginal coverage of conformal set")
     conformal_alpha: Optional[float] = Field(default=None, description="Target significance level alpha")
+    coverage_ci_low: Optional[float] = Field(default=None, description="Lower bound of Wilson score confidence interval")
+    coverage_ci_high: Optional[float] = Field(default=None, description="Upper bound of Wilson score confidence interval")
+    oof_brier: Optional[float] = Field(default=None, description="Out-of-fold Brier score")
+    oof_ece: Optional[float] = Field(default=None, description="Out-of-fold Expected Calibration Error")
+    evaluation_mode: str = Field(default="out_of_fold", description="Evaluation scheme applied")
+    coverage_valid: bool = Field(default=True, description="Whether empirical coverage evaluation was leak-free")
+    y_eval: Optional[Any] = Field(default=None, description="Evaluation ground truth labels slice")
+    post_probas: Optional[Any] = Field(default=None, description="Evaluation post-calibration probabilities")
+    q_hat: Optional[float] = Field(default=None, description="Calibrated conformal prediction quantile threshold")
+    quantile_method_: Optional[str] = Field(default="higher", description="Quantile method employed")
+    warnings: list[str] = Field(default_factory=list, description="Warnings or diagnostic notices")
 
     def to_compact(self) -> Dict[str, Any]:
-        res: Dict[str, Any] = {
-            "method": self.method,
-            "pre_brier_score": round(self.pre_brier_score, 4),
-            "post_brier_score": round(self.post_brier_score, 4),
-            "brier_score_lift": round(self.brier_score_lift, 4),
-            "is_well_calibrated": self.is_well_calibrated,
-        }
+        res: Dict[str, Any] = {"method": self.method, "evaluation_mode": self.evaluation_mode}
+        if self.pre_brier_score is not None:
+            res["pre_brier_score"] = round(self.pre_brier_score, 4)
+        if self.post_brier_score is not None:
+            res["post_brier_score"] = round(self.post_brier_score, 4)
+        if self.oof_brier is not None:
+            res["oof_brier"] = round(self.oof_brier, 4)
+        if self.brier_score_lift is not None:
+            res["brier_score_lift"] = round(self.brier_score_lift, 4)
+        if self.is_well_calibrated is not None:
+            res["is_well_calibrated"] = self.is_well_calibrated
         if self.status:
             res["status"] = self.status
         if self.pre_ece is not None and self.post_ece is not None:
@@ -65,12 +82,18 @@ class CalibrationReportDTO(BaseDTO):
             res["post_ece"] = round(self.post_ece, 4)
             if self.ece_lift is not None:
                 res["ece_lift"] = round(self.ece_lift, 4)
+        if self.oof_ece is not None:
+            res["oof_ece"] = round(self.oof_ece, 4)
         if self.adaptive_ece is not None:
             res["adaptive_ece"] = round(self.adaptive_ece, 4)
         if self.temperature is not None:
             res["temperature"] = round(self.temperature, 4)
         if self.conformal_coverage is not None:
             res["conformal_coverage"] = round(self.conformal_coverage, 4)
+        if self.coverage_ci_low is not None:
+            res["coverage_ci_low"] = self.coverage_ci_low
+        if self.coverage_ci_high is not None:
+            res["coverage_ci_high"] = self.coverage_ci_high
         return res
 
 

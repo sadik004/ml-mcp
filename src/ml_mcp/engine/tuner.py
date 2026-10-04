@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Literal, Optional, Tuple
+
 import numpy as np
-import pandas as pd
 import optuna
+import pandas as pd
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from sklearn.base import BaseEstimator, clone
@@ -67,7 +68,7 @@ def _get_sklearn_scoring(metric: str, task_type: str) -> str:
 
 class BayesianTuner:
     """Bayesian Hyperparameter Tuner powered by Optuna TPE & Active In-Loop MedianPruner.
-    
+
     Theoretical Basis:
         - Akiba, T., Sano, S., Yanase, T., Ohta, T., & Koyama, M. (KDD 2019).
           Optuna: A Next-generation Hyperparameter Optimization Framework.
@@ -78,12 +79,13 @@ class BayesianTuner:
         n_trials: int = 20,
         time_budget_secs: Optional[int] = None,
         cv_splits: int = 5,
-        random_state: int = 42,
+        random_state: Optional[int] = None,
     ) -> None:
+        from ml_mcp.config import get_settings
         self.n_trials = n_trials
         self.time_budget_secs = time_budget_secs
         self.cv_splits = cv_splits
-        self.random_state = random_state
+        self.random_state = random_state if random_state is not None else get_settings().random_state
 
     def _sample_params(self, trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
         """Sample hyperparameters based on model family."""
@@ -187,6 +189,7 @@ class BayesianTuner:
         study_name: Optional[str] = None,
     ) -> Tuple[OptunaStudyDTO, BaseEstimator]:
         """Execute Bayesian Optimization with In-Loop Median Pruning and Group Splitting."""
+        groups_arr: Optional[np.ndarray] = None
         if isinstance(X, pd.DataFrame):
             if group_column and group_column in X.columns:
                 groups_arr = np.asarray(X[group_column])
@@ -201,10 +204,8 @@ class BayesianTuner:
 
         y_arr = np.asarray(y)
 
-        if direction is None:
-            direction = _get_metric_direction(metric)
-
-        optuna_direction = direction
+        resolved_direction: Literal["minimize", "maximize"] = direction if direction in ["minimize", "maximize"] else _get_metric_direction(metric)  # type: ignore[assignment]
+        optuna_direction = resolved_direction
         scoring_metric = _get_sklearn_scoring(metric, task_type)
         scorer = get_scorer(scoring_metric)
 
@@ -292,8 +293,7 @@ class BayesianTuner:
         )
 
         # Refit best estimator on full training set
-        all_best_params = self._sample_params(study.best_trial, model_name)
-        all_best_params.update(best_params)
+        all_best_params = dict(best_params)
         best_estimator = self._instantiate_model(model_name, task_type, all_best_params)
         best_estimator.fit(X_arr, y_arr)
 

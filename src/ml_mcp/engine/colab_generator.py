@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any, Dict, List
 
+from ml_mcp.config import get_settings
 from ml_mcp.schemas.colab import ColabNotebookDTO
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class ColabNotebookGenerator:
     ) -> ColabNotebookDTO:
         """Synthesize a complete 8-cell production Colab training pipeline."""
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        seed = get_settings().random_state
 
         cells: List[Dict[str, Any]] = []
 
@@ -119,9 +121,9 @@ class ColabNotebookGenerator:
                 "    print(f'Warning: {DATASET_PATH} not found. Generating synthetic benchmark tabular data...')",
                 "    from sklearn.datasets import make_classification, make_regression",
                 "    if TASK_TYPE == 'classification':",
-                "        X_raw, y_raw = make_classification(n_samples=1000, n_features=12, n_informative=8, random_state=42)",
+                f"        X_raw, y_raw = make_classification(n_samples=1000, n_features=12, n_informative=8, random_state={seed})",
                 "    else:",
-                "        X_raw, y_raw = make_regression(n_samples=1000, n_features=12, n_informative=8, random_state=42)",
+                f"        X_raw, y_raw = make_regression(n_samples=1000, n_features=12, n_informative=8, random_state={seed})",
                 "    feature_cols = [f'feat_{i}' for i in range(12)]",
                 "    df = pd.DataFrame(X_raw, columns=feature_cols)",
                 "    df[TARGET_COL] = y_raw",
@@ -139,7 +141,7 @@ class ColabNotebookGenerator:
                 "    ('cat', Pipeline([('imp', SimpleImputer(strategy='most_frequent')), ('ohe', OneHotEncoder(handle_unknown='ignore', sparse_output=False))]), cat_cols),",
                 "])",
                 "",
-                "X_train, X_holdout, y_train, y_holdout = train_test_split(X, y, test_size=0.20, random_state=42)",
+                f"X_train, X_holdout, y_train, y_holdout = train_test_split(X, y, test_size=0.20, random_state={seed})",
                 "X_train_proc = preprocessor.fit_transform(X_train)",
                 "X_holdout_proc = preprocessor.transform(X_holdout)",
                 "print(f'Processed train shape: {X_train_proc.shape}, holdout shape: {X_holdout_proc.shape}')",
@@ -156,16 +158,16 @@ class ColabNotebookGenerator:
                 "import lightgbm as lgb",
                 "import xgboost as xgb",
                 "",
-                "cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42) if TASK_TYPE == 'classification' else KFold(n_splits=5, shuffle=True, random_state=42)",
+                f"cv = StratifiedKFold(n_splits=5, shuffle=True, random_state={seed}) if TASK_TYPE == 'classification' else KFold(n_splits=5, shuffle=True, random_state={seed})",
                 "metric = 'roc_auc' if TASK_TYPE == 'classification' else 'neg_root_mean_squared_error'",
                 "",
                 "gpu_tree = {'device': 'cuda'} if torch.cuda.is_available() else {}",
                 "",
                 "candidates = {",
-                "    'LightGBM': lgb.LGBMClassifier(**gpu_tree, random_state=42, verbose=-1) if TASK_TYPE == 'classification' else lgb.LGBMRegressor(**gpu_tree, random_state=42, verbose=-1),",
-                "    'HistGradientBoosting': HistGradientBoostingClassifier(random_state=42) if TASK_TYPE == 'classification' else HistGradientBoostingRegressor(random_state=42),",
-                "    'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42) if TASK_TYPE == 'classification' else RandomForestRegressor(n_estimators=100, random_state=42),",
-                "    'LinearBaseline': LogisticRegression(max_iter=1000, random_state=42) if TASK_TYPE == 'classification' else Ridge(random_state=42),",
+                f"    'LightGBM': lgb.LGBMClassifier(**gpu_tree, random_state={seed}, verbose=-1) if TASK_TYPE == 'classification' else lgb.LGBMRegressor(**gpu_tree, random_state={seed}, verbose=-1),",
+                f"    'HistGradientBoosting': HistGradientBoostingClassifier(random_state={seed}) if TASK_TYPE == 'classification' else HistGradientBoostingRegressor(random_state={seed}),",
+                f"    'RandomForest': RandomForestClassifier(n_estimators=100, random_state={seed}) if TASK_TYPE == 'classification' else RandomForestRegressor(n_estimators=100, random_state={seed}),",
+                f"    'LinearBaseline': LogisticRegression(max_iter=1000, random_state={seed}) if TASK_TYPE == 'classification' else Ridge(random_state={seed}),",
                 "}",
                 "",
                 "leaderboard = {}",
@@ -197,12 +199,12 @@ class ColabNotebookGenerator:
                 "            'num_leaves': trial.suggest_int('num_leaves', 15, 63),",
                 "            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),",
                 "            'n_estimators': trial.suggest_int('n_estimators', 50, 200),",
-                "            'random_state': 42,",
+                f"            'random_state': {seed},",
                 "            'verbose': -1,",
                 "        }",
                 "        m = lgb.LGBMClassifier(**params) if TASK_TYPE == 'classification' else lgb.LGBMRegressor(**params)",
                 "    else:",
-                "        m = HistGradientBoostingClassifier(learning_rate=trial.suggest_float('learning_rate', 0.01, 0.2, log=True), max_iter=trial.suggest_int('max_iter', 50, 200), random_state=42)",
+                f"        m = HistGradientBoostingClassifier(learning_rate=trial.suggest_float('learning_rate', 0.01, 0.2, log=True), max_iter=trial.suggest_int('max_iter', 50, 200), random_state={seed})",
                 "    return float(np.mean(cross_val_score(m, X_train_proc, y_train, cv=cv, scoring=metric, n_jobs=-1)))",
                 "",
                 "study = optuna.create_study(direction='maximize')",

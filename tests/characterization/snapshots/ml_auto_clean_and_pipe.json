@@ -1,0 +1,6 @@
+{
+  "imputation_strategy": "str",
+  "pipeline_str": "str",
+  "status": "str",
+  "steps": "list"
+}

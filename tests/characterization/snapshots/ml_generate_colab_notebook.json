@@ -1,0 +1,7 @@
+{
+  "cell_count": "int",
+  "cuda_enabled": "bool",
+  "drive_checkpoint_dir": "str",
+  "kaggle_slug": "NoneType",
+  "notebook_path": "str"
+}

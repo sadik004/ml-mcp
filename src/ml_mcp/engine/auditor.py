@@ -1,14 +1,18 @@
 """Comprehensive dataset hygiene auditor and pre-flight health scanner with missingness mechanism tests and Benford's law."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-from scipy.stats import skew, chi2_contingency
+from scipy.stats import chi2_contingency, skew
 
 from ml_mcp.engine.sentinel_hunter import SentinelHunter
 from ml_mcp.schemas.audit import AuditReportDTO
+
+logger = logging.getLogger(__name__)
 
 
 class DatasetAuditor:
@@ -78,8 +82,8 @@ class DatasetAuditor:
                         _, p_val, _, _ = chi2_contingency(contingency)
                         if p_val < 0.05:
                             return "MNAR"
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Chi2 contingency test failed on missingness check: {e}")
 
         return "MCAR"
 
@@ -193,8 +197,8 @@ class DatasetAuditor:
                         skew_val = float(skew(y.to_numpy(dtype=np.float64), nan_policy="omit"))
                         if not np.isnan(skew_val):
                             target_skewness = round(skew_val, 4)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Target skew calculation failed: {e}")
 
         # 7. Group Column Candidate Detection
         group_candidate: Optional[str] = None
@@ -217,8 +221,8 @@ class DatasetAuditor:
                         parsed = pd.to_datetime(df[col].dropna().head(20), errors="coerce")
                         if parsed.notna().all():
                             date_cols.append(col)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Date inference failed for column '{col}': {e}")
 
         for dcol in date_cols:
             parsed_series = pd.to_datetime(df[dcol], errors="coerce").dropna()

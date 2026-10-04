@@ -1,16 +1,21 @@
 """Target Leakage Detector using Chatterjee non-parametric rank correlation, Predictive Power Score (PPS), and Bias-Corrected Cramer's V."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+import logging
+from typing import Dict, List, Literal, Optional
+
 import numpy as np
 import pandas as pd
 from scipy.stats import chi2_contingency, rankdata
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.model_selection import cross_val_score
 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import OrdinalEncoder
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
+from ml_mcp.config import get_settings
 from ml_mcp.schemas.audit import TargetLeakageReportDTO
+
+logger = logging.getLogger(__name__)
 
 
 class TargetLeakageDetector:
@@ -57,8 +62,8 @@ class TargetLeakageDetector:
 
         # Ranks of Y
         r = rankdata(y_sorted, method="max")
-        l = n - rankdata(y_sorted, method="min") + 1
-        denom = 2.0 * float(np.sum(l * (n - l)))
+        l_rank = n - rankdata(y_sorted, method="min") + 1
+        denom = 2.0 * float(np.sum(l_rank * (n - l_rank)))
         if denom <= 1e-12:
             denom = (n * (n**2 - 1)) / 3.0
 
@@ -67,7 +72,7 @@ class TargetLeakageDetector:
         return round(float(np.clip(xi, 0.0, 1.0)), 4)
 
     @staticmethod
-    def calculate_bias_corrected_cramers_v(x: pd.Series, y: pd.Series) -> float:
+    def calculate_bias_corrected_cramers_v(x: pd.Series, y: pd.Series) -> Optional[float]:
         """Computes Bias-Corrected Cramer's V for categorical association (Greenacre 2021/2023).
 
         Formula:
@@ -91,8 +96,9 @@ class TargetLeakageDetector:
 
         try:
             chi2, _, _, _ = chi2_contingency(contingency, correction=False)
-        except Exception:
-            return 0.0
+        except Exception as e:
+            logger.debug(f"chi2_contingency calculation failed: {e}")
+            return None
 
         phi2 = chi2 / n
         phi2_corr = max(0.0, phi2 - ((r - 1) * (k - 1)) / (n - 1))
@@ -109,7 +115,7 @@ class TargetLeakageDetector:
     @staticmethod
     def calculate_single_feature_pps(
         x: pd.Series, y: pd.Series, is_classification: bool = True
-    ) -> float:
+    ) -> Optional[float]:
         """Evaluates single-feature Predictive Power Score (PPS) via a 1-split Decision Tree (Wetschoreck et al. 2020)."""
         valid_mask = x.notna() & y.notna()
         if valid_mask.sum() < 20:
@@ -125,7 +131,7 @@ class TargetLeakageDetector:
             X_mat = enc.fit_transform(x_sub.to_frame())
 
         if len(X_mat) > 1000:
-            rng = np.random.RandomState(42)
+            rng = np.random.RandomState(get_settings().random_state)
             idx = rng.choice(len(X_mat), 1000, replace=False)
             X_mat = X_mat[idx]
             y_sub = y_sub.iloc[idx]
@@ -133,7 +139,7 @@ class TargetLeakageDetector:
         try:
             if is_classification:
                 y_cat = pd.Categorical(y_sub).codes
-                clf = DecisionTreeClassifier(max_depth=1, random_state=42)
+                clf = DecisionTreeClassifier(max_depth=1, random_state=get_settings().random_state)
                 scores = cross_val_score(clf, X_mat, y_cat, cv=3, scoring="accuracy")
                 model_score = float(np.mean(scores))
                 # Wetschoreck et al. PPS: normalized against majority class baseline
@@ -145,11 +151,12 @@ class TargetLeakageDetector:
                 return round(float(np.clip(norm_pps, 0.0, 1.0)), 4)
             else:
                 y_num = y_sub.to_numpy(dtype=np.float64)
-                reg = DecisionTreeRegressor(max_depth=1, random_state=42)
+                reg = DecisionTreeRegressor(max_depth=1, random_state=get_settings().random_state)
                 scores = cross_val_score(reg, X_mat, y_num, cv=3, scoring="r2")
                 return round(float(np.clip(np.mean(scores), 0.0, 1.0)), 4)
-        except Exception:
-            return 0.0
+        except Exception as e:
+            logger.debug(f"calculate_single_feature_pps failed: {e}")
+            return None
 
     def detect_leakage(
         self,
@@ -163,17 +170,18 @@ class TargetLeakageDetector:
 
         # Out-of-core reservoir sampling guard for massive datasets (>50k rows) to prevent RAM explosion
         if len(df) > 50000:
-            df = df.sample(50000, random_state=42)
+            df = df.sample(50000, random_state=get_settings().random_state)
 
         y = df[target_column]
         feature_df = df.drop(columns=[target_column])
 
-        correlations: Dict[str, float] = {}
-        chatterjee_scores: Dict[str, float] = {}
-        cramers_v_scores: Dict[str, float] = {}
-        pps_scores: Dict[str, float] = {}
-        mi_scores: Dict[str, float] = {}
+        correlations: Dict[str, Optional[float]] = {}
+        chatterjee_scores: Dict[str, Optional[float]] = {}
+        cramers_v_scores: Dict[str, Optional[float]] = {}
+        pps_scores: Dict[str, Optional[float]] = {}
+        mi_scores: Dict[str, Optional[float]] = {}
         leaked_features: List[str] = []
+        warnings: List[str] = []
 
         numeric_cols = feature_df.select_dtypes(include=[np.number]).columns.tolist()
         categorical_cols = [c for c in feature_df.columns if c not in numeric_cols]
@@ -197,23 +205,34 @@ class TargetLeakageDetector:
                             correlations[col] = round(r, 4)
                             if r >= self.threshold_correlation and col not in leaked_features:
                                 leaked_features.append(col)
-                    except Exception:
-                        pass
+                    except Exception as corr_err:
+                        logger.warning(f"Correlation calculation failed for '{col}': {corr_err}")
+                        warnings.append(f"Correlation calculation failed for '{col}': {corr_err}")
+                        correlations[col] = None
 
                 # Chatterjee Rank Correlation (Non-linear Leakage)
                 if pd.api.types.is_numeric_dtype(y):
-                    xi_val = self.calculate_chatterjee_correlation(series, y)
-                    chatterjee_scores[col] = xi_val
-                    if xi_val >= self.threshold_chatterjee and col not in leaked_features:
-                        leaked_features.append(col)
+                    try:
+                        xi_val = self.calculate_chatterjee_correlation(series, y)
+                        chatterjee_scores[col] = xi_val
+                        if xi_val >= self.threshold_chatterjee and col not in leaked_features:
+                            leaked_features.append(col)
+                    except Exception as chat_err:
+                        logger.warning(f"Chatterjee calculation failed for '{col}': {chat_err}")
+                        warnings.append(f"Chatterjee calculation failed for '{col}': {chat_err}")
+                        chatterjee_scores[col] = None
 
         # 2. Categorical Feature Analysis: Bias-Corrected Cramer's V
         for col in categorical_cols:
             if is_discrete_target:
                 v_score = self.calculate_bias_corrected_cramers_v(feature_df[col], y)
-                cramers_v_scores[col] = v_score
-                if v_score >= self.threshold_cramers_v and col not in leaked_features:
-                    leaked_features.append(col)
+                if v_score is None:
+                    warnings.append(f"Failed to calculate Cramer's V for column '{col}'.")
+                    cramers_v_scores[col] = None
+                else:
+                    cramers_v_scores[col] = v_score
+                    if v_score >= self.threshold_cramers_v and col not in leaked_features:
+                        leaked_features.append(col)
             else:
                 # Continuous target vs categorical feature: evaluate ordinal codes
                 valid_mask = feature_df[col].notna() & y.notna()
@@ -224,31 +243,40 @@ class TargetLeakageDetector:
                         chatterjee_scores[col] = xi_val
                         if xi_val >= self.threshold_chatterjee and col not in leaked_features:
                             leaked_features.append(col)
-                    except Exception:
-                        pass
+                    except Exception as cat_err:
+                        logger.warning(f"Chatterjee categorical calculation failed for '{col}': {cat_err}")
+                        warnings.append(f"Chatterjee categorical calculation failed for '{col}': {cat_err}")
+                        chatterjee_scores[col] = None
 
         # 3. PPS Tree Safety Net on High-Signal or Borderline Predictors
         all_cols = numeric_cols + categorical_cols
         for col in all_cols:
+            corr_val = correlations.get(col) or 0.0
+            chat_val = chatterjee_scores.get(col) or 0.0
+            cv_val = cramers_v_scores.get(col) or 0.0
             is_suspicious = (
-                correlations.get(col, 0.0) >= 0.80
-                or chatterjee_scores.get(col, 0.0) >= 0.70
-                or cramers_v_scores.get(col, 0.0) >= 0.80
+                corr_val >= 0.80
+                or chat_val >= 0.70
+                or cv_val >= 0.80
             )
             if is_suspicious or len(all_cols) <= 10:
                 pps = self.calculate_single_feature_pps(
                     feature_df[col], y, is_classification=is_discrete_target
                 )
-                pps_scores[col] = pps
-                if pps >= self.threshold_pps and col not in leaked_features:
-                    leaked_features.append(col)
+                if pps is None:
+                    warnings.append(f"Failed to calculate PPS for column '{col}'.")
+                    pps_scores[col] = None
+                else:
+                    pps_scores[col] = pps
+                    if pps >= self.threshold_pps and col not in leaked_features:
+                        leaked_features.append(col)
 
         # 4. Scalable Mutual Information
         if all_cols and len(df) > 10:
             eval_df = feature_df[all_cols].copy()
             y_eval = y.copy()
             if len(eval_df) > 2000:
-                rng = np.random.RandomState(42)
+                rng = np.random.RandomState(get_settings().random_state)
                 sub_indices = rng.choice(len(eval_df), size=2000, replace=False)
                 eval_df = eval_df.iloc[sub_indices].copy()
                 y_eval = y_eval.iloc[sub_indices].copy()
@@ -270,15 +298,16 @@ class TargetLeakageDetector:
 
             try:
                 if is_discrete_target:
-                    raw_mi = mutual_info_classif(X_prepared, y_eval, random_state=42, n_neighbors=3)
+                    raw_mi = mutual_info_classif(X_prepared, y_eval, random_state=get_settings().random_state, n_neighbors=3)
                 else:
-                    raw_mi = mutual_info_regression(X_prepared, y_eval, random_state=42, n_neighbors=3)
+                    raw_mi = mutual_info_regression(X_prepared, y_eval, random_state=get_settings().random_state, n_neighbors=3)
                 for col, score in zip(all_cols, raw_mi):
                     mi_scores[col] = round(float(score), 4)
                     if score >= self.threshold_mi and col not in leaked_features:
                         leaked_features.append(col)
-            except Exception:
-                pass
+            except Exception as mi_err:
+                logger.warning(f"Mutual information calculation failed: {mi_err}")
+                warnings.append(f"Mutual information calculation failed: {mi_err}")
 
         return TargetLeakageReportDTO(
             target_column=target_column,
@@ -289,4 +318,5 @@ class TargetLeakageDetector:
             pps_scores=pps_scores,
             mutual_info_scores=mi_scores,
             has_critical_leakage=len(leaked_features) > 0,
+            warnings=warnings,
         )

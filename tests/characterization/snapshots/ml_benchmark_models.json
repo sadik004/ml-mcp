@@ -1,0 +1,9 @@
+{
+  "champion_model": "str",
+  "champion_score": "float",
+  "leaderboard_summary": "list",
+  "primary_metric": "str",
+  "stacking_candidates": "list",
+  "task_type": "str",
+  "warnings": "list"
+}

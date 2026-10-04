@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Union
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, r2_score
@@ -64,7 +65,7 @@ class SliceFairnessAuditor:
         if len(X_arr) != len(composite_groups):
             raise ValueError(f"Length mismatch: X_test ({len(X_arr)}) and protected_series ({len(composite_groups)})")
 
-        preds = model.predict(X_arr)
+        preds = model.predict(X_test)
         unique_groups = np.unique(composite_groups)
 
         subgroup_scores: Dict[str, float] = {}

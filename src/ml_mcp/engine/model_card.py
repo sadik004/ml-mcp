@@ -21,8 +21,11 @@ def generate_model_card(
         params_str = "- Default / Tuned parameters\n"
 
     metrics_rows = ""
-    for k, v in metrics.items():
-        metrics_rows += f"| {k} | {v} |\n"
+    if metrics:
+        for k, v in metrics.items():
+            metrics_rows += f"| {k} | {v} |\n"
+    else:
+        metrics_rows = "| Status | No evaluated metrics provided |\n"
 
     card = f"""# Model Card: {model_name}
 

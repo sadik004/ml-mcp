@@ -66,3 +66,28 @@ def test_target_leakage_cramers_v_categorical():
     detector = TargetLeakageDetector()
     v = detector.calculate_bias_corrected_cramers_v(df["status"], df["outcome"])
     assert v >= 0.95
+
+
+def test_target_leakage_regression_with_categorical():
+    np.random.seed(42)
+    n = 150
+    cats = np.random.choice(["Tier1", "Tier2", "Tier3"], size=n)
+    y = np.where(cats == "Tier1", 10.0, np.where(cats == "Tier2", 5.0, 1.0)) + np.random.normal(0, 0.1, n)
+    df = pd.DataFrame({"category": cats, "num_val": np.random.randn(n), "target": y})
+
+    detector = TargetLeakageDetector()
+    rep = detector.detect_leakage(df, target_column="target", task_type="regression")
+    assert "category" in rep.leaked_features or rep.has_critical_leakage is True
+
+
+def test_target_leakage_large_dataset_subsample():
+    np.random.seed(42)
+    n = 2100
+    df = pd.DataFrame({
+        "feat": np.random.randn(n),
+        "target": np.random.binomial(1, 0.5, size=n),
+    })
+    detector = TargetLeakageDetector()
+    rep = detector.detect_leakage(df, target_column="target", task_type="classification")
+    assert isinstance(rep.has_critical_leakage, bool)
+

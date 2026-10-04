@@ -48,3 +48,16 @@ def test_format_error_envelope_exception_handling():
     assert envelope["error_type"] == "ValueError"
     assert "learning_rate must be positive" in envelope["message"]
     assert envelope["retryable"] is False
+
+
+def test_format_error_envelope_string_and_custom():
+    envelope = format_error_envelope("CustomError", "Custom message", details={"attempted_column": "target_c"}, candidates=["target_churn"])
+    assert envelope["error_type"] == "CustomError"
+    assert "target_churn" in envelope["suggestions"]
+
+    try:
+        raise RuntimeError("Something failed")
+    except RuntimeError as e:
+        env = format_error_envelope(e, "test_tool", ["col_a", "col_b"])
+        assert env["error_type"] == "RuntimeError"
+        assert "test_tool" in env["message"]

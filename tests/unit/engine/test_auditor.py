@@ -55,3 +55,31 @@ def test_dataset_auditor_dataperf_id_memorization_guard():
     report = auditor.audit_dataset(df)
     assert "unique_guid" in report.id_memorization_columns
     assert "normal_feat" not in report.id_memorization_columns
+
+
+def test_dataset_auditor_benfords_law():
+    # Benford compliant numbers
+    rng = np.random.RandomState(42)
+    compliant_data = 10.0 ** rng.uniform(1.0, 5.0, size=500)
+    series_comp = pd.Series(compliant_data)
+    is_anomalous, chi2 = DatasetAuditor.check_benfords_law(series_comp)
+    assert isinstance(is_anomalous, bool)
+    assert chi2 >= 0.0
+
+    # Non-compliant uniform numbers
+    uniform_data = rng.uniform(1.0, 10000.0, size=500)
+    series_unif = pd.Series(uniform_data)
+    is_anomalous_u, chi2_u = DatasetAuditor.check_benfords_law(series_unif)
+    assert chi2_u >= 0.0
+
+
+def test_dataset_auditor_regression_task():
+    n = 200
+    df = pd.DataFrame({
+        "x1": np.random.randn(n),
+        "x2": np.random.uniform(0, 10, n),
+        "y": np.random.randn(n) * 5.0 + 10.0,
+    })
+    auditor = DatasetAuditor()
+    report = auditor.audit_dataset(df, target_column="y", task_type="regression")
+    assert report.recommended_metric in ["rmse", "mae"]

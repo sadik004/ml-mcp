@@ -22,8 +22,9 @@ class TreeShapExplainer:
         - Sundararajan, M., & Najmi, A. (2020). The many Shapley values for model explanation. ICML / AISTATS.
     """
 
-    def __init__(self, random_state: int = 42) -> None:
-        self.random_state = random_state
+    def __init__(self, random_state: Optional[int] = None) -> None:
+        from ml_mcp.config import get_settings
+        self.random_state = random_state if random_state is not None else get_settings().random_state
 
     def _prepare_data(
         self,
@@ -205,8 +206,14 @@ class TreeShapExplainer:
                 sv = ke.shap_values(row_arr, nsamples=50)
                 if isinstance(sv, list):
                     phi = sv[1][0] if len(sv) > 1 else sv[0][0]
+                elif isinstance(sv, np.ndarray) and sv.ndim == 3:
+                    phi = sv[0, :, 1] if sv.shape[2] > 1 else sv[0, :, 0]
+                elif isinstance(sv, np.ndarray) and sv.ndim == 2:
+                    phi = sv[0]
                 else:
                     phi = np.asarray(sv).ravel()
+                if len(phi) > len(names):
+                    phi = phi[:len(names)]
                 base_val = float(np.mean(pred_fn(ref_bg)))
         except Exception as e:
             logger.warning("Local SHAP calculation fallback via feature difference: %s", e)
@@ -214,6 +221,8 @@ class TreeShapExplainer:
             phi = np.zeros(len(names))
 
         # Build waterfall attribution steps
+        if len(names) != len(phi):
+            names = [f"f_{i}" for i in range(len(phi))]
         ranked_idx = np.argsort(np.abs(phi))[::-1]
         waterfall_steps = []
         cumulative = base_val

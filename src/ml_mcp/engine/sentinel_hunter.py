@@ -1,7 +1,8 @@
 """Sentinel Value Hunter using Dirac-Delta isolated boundary mass detection and enterprise defaults."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, Set, Tuple
+
 import numpy as np
 import pandas as pd
 
@@ -84,8 +85,12 @@ class SentinelHunter:
 
                         for val, count in val_counts.items():
                             freq_ratio = count / n_total
+                            try:
+                                float_val = float(val)  # type: ignore[arg-type]
+                            except (ValueError, TypeError):
+                                continue
                             # Spike threshold check and extreme boundary distance
-                            if freq_ratio >= self.spike_threshold and abs(val - med) > threshold_dist:
+                            if freq_ratio >= self.spike_threshold and abs(float_val - med) > threshold_dist:
                                 # Ensure it is an isolated point mass at the extreme
                                 if val == valid_num.max() or val == valid_num.min():
                                     spike_mask = series == val

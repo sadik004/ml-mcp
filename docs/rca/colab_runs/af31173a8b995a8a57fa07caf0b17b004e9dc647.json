@@ -1,0 +1,10 @@
+{
+  "commit": "af31173a8b995a8a57fa07caf0b17b004e9dc647",
+  "exit_code": 0,
+  "passed": 1,
+  "failed": 0,
+  "duration": 4.066,
+  "timestamp": "2026-10-04T03:18:02.915319+00:00",
+  "session": "t4-cluster",
+  "suite": "tests/verification/heavy"
+}

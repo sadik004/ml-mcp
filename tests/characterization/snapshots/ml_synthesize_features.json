@@ -1,0 +1,8 @@
+{
+  "processed_csv_path": "str",
+  "skipped_high_cardinality_groups": "list",
+  "status": "str",
+  "synthesized_columns": "list",
+  "synthesized_columns_count": "int",
+  "total_columns": "int"
+}

@@ -35,3 +35,12 @@ def test_gpu_manager_resilient_fallback():
     fallback_params = manager.get_fallback_cpu_params("xgboost")
     assert fallback_params["device"] == "cpu"
     assert fallback_params["n_jobs"] == -1
+
+    lgb_fb = manager.get_fallback_cpu_params("lightgbm")
+    assert lgb_fb["device_type"] == "cpu"
+
+    cb_fb = manager.get_fallback_cpu_params("catboost")
+    assert cb_fb["task_type"] == "CPU"
+
+    other_fb = manager.get_fallback_cpu_params("sklearn")
+    assert other_fb["n_jobs"] == 1

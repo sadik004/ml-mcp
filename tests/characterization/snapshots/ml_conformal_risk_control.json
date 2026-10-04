@@ -1,0 +1,14 @@
+{
+  "ambiguity_rate": "float",
+  "average_set_size": "float",
+  "calibrated_lambda": "float",
+  "empirical_risk": "float",
+  "guarantee_satisfied": "bool",
+  "holdout_check_passed": "bool",
+  "holdout_risk_ucb": "float",
+  "human_triage_count": "int",
+  "loss_function": "str",
+  "target_risk": "float",
+  "triage_samples_preview": "list",
+  "warnings": "list"
+}

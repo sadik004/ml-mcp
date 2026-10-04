@@ -182,6 +182,10 @@ Runs an automated tournament across LightGBM, XGBoost, CatBoost, Random Forest, 
   - `group_column` (`str`, optional): Column name for group-aware StratifiedGroupKFold / GroupKFold cross-validation.
   - `fast_mode` (`bool`, default: `False`): Truncates tree counts (30 trees) for low-latency testing.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
+- **Key Output DTO Fields:**
+  - `champion_score_source` (`"holdout" | "cv"`): Explicit provenance indicator showing whether the champion model was scored on an untouched outer holdout or cross-validation out-of-fold predictions.
+  - `splitter` (`str`): Cross-validation splitter utilized (`GroupKFold`, `StratifiedKFold`, or `KFold`).
+  - `warnings` (`list[str]`): Structured audit log capturing any non-fatal model fallbacks, data constraints, or degraded splits.
 
 ### `ml_create_ensemble`
 Constructs multi-model Stacking and Voting ensembles with out-of-fold meta-learners.
@@ -228,6 +232,11 @@ Calibrates model output probabilities via Platt Scaling, Isotonic Regression, or
   - `model_name` (`str`, default: `"lightgbm"`): Fallback model architecture if model_path not supplied.
   - `method` (`"isotonic" | "sigmoid" | "temperature"`, optional): Calibration technique.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
+- **Key Output DTO Fields:**
+  - `evaluation_mode` (`"out_of_fold" | "holdout" | "in_sample" | "unknown_provenance"`): Provenance of probability calibration evaluation.
+  - `status` (`str`): Execution state (`"completed"`, `"infeasible"`).
+  - `conformal_coverage` (`float`): Realized empirical coverage evaluated on holdout calibration split.
+  - `warnings` (`list[str]`): Audit trail of any sample-size constraints or fallback routes.
 
 ### `ml_tune_threshold_and_errors`
 Optimizes classification decision thresholds using PR-curve exact cutoffs and Sheng & Ling (2014) cost-sensitive loss matrix.
@@ -243,6 +252,9 @@ Optimizes classification decision thresholds using PR-curve exact cutoffs and Sh
   - `model_path` (`str`, optional): Path to persisted model checkpoint (.joblib).
   - `model_name` (`str`, default: `"lightgbm"`): Model architecture if model_path not supplied.
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
+- **Key Output DTO Fields:**
+  - `evaluation_mode` (`"out_of_fold" | "holdout" | "in_sample" | "unknown_provenance"`): Source of predictions used for threshold optimization.
+  - `warnings` (`list[str]`): Any warnings regarding sample size or fallback behavior.
 
 ### `ml_explain_predictions`
 Computes sub-10s TreeSHAP global feature attributions or Lundberg et al. (Nature MI 2020) local sample waterfall breakdowns.
@@ -280,6 +292,11 @@ Provides rigorous finite-sample mathematical error-rate guarantees via Split Con
   - `model_path` (`str`, required): Model checkpoint.
   - `alpha` (`float`, default: `0.10`): Maximum tolerated risk bound (1 - alpha = 90% coverage).
   - `view` (`"compact" | "detailed"`, default: `"compact"`)
+- **Key Output DTO Fields:**
+  - `status` (`"completed" | "infeasible"`): Mathematical feasibility state under target risk constraint.
+  - `ucb_method` (`str`): Upper confidence bound formulation (e.g. Beta / Clopper-Pearson / Hoeffding-Bentkus).
+  - `per_class_lambda` (`dict[int, float]`): Class-conditional threshold calibration vectors under Mondrian conformal risk control.
+  - `warnings` (`list[str]`): Explicit audit log capturing infeasibility, small sample size, or class-boundary warnings.
 
 ---
 

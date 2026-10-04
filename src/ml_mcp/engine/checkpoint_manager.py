@@ -4,29 +4,58 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import logging
 import os
 import subprocess
 from pathlib import Path
 from typing import Any, Optional
+
 import joblib
 
 from ml_mcp.config import get_settings
 from ml_mcp.schemas.audit import DatasetLineageDTO
 from ml_mcp.schemas.tournament import LineageDTO
 
+logger = logging.getLogger(__name__)
+
 
 class CheckpointManager:
     """Handles atomic .joblib serialization, Drive persistence, and cryptographic lineage tracking."""
 
-    def __init__(self, storage_root: Optional[str] = None) -> None:
-        if storage_root is not None:
-            self.root = Path(storage_root).resolve()
+    def __init__(
+        self,
+        storage_root: Optional[str] = None,
+        checkpoint_dir: Optional[str] = None,
+    ) -> None:
+        target_root = checkpoint_dir or storage_root
+        if target_root is not None:
+            self.root = Path(target_root).resolve()
         else:
             settings = get_settings()
             self.root = Path(settings.drive_root).resolve()
 
-        self.checkpoints_dir = self.root / "checkpoints"
+        self.checkpoints_dir = self.root / "checkpoints" if "checkpoints" not in self.root.parts else self.root
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+    def create_lineage(
+        self,
+        df: Any,
+        checkpoint_path: Optional[str] = None,
+        job_id: str = "default_job",
+        random_seed: Optional[int] = None,
+    ) -> LineageDTO:
+        """Helper to create and record lineage from an in-memory DataFrame."""
+        import pandas as pd
+        csv_bytes = df.to_csv(index=False).encode("utf-8") if isinstance(df, pd.DataFrame) else bytes(str(df), "utf-8")
+        row_count = len(df) if hasattr(df, "__len__") else 0
+        col_count = len(getattr(df, "columns", [])) if hasattr(df, "columns") else 0
+        return self.record_lineage(
+            dataset_content=csv_bytes,
+            row_count=row_count,
+            column_count=col_count,
+            random_seed=random_seed,
+            job_id=job_id,
+        )
 
     @staticmethod
     def get_git_commit_sha() -> Optional[str]:
@@ -41,8 +70,8 @@ class CheckpointManager:
             )
             if res.returncode == 0 and res.stdout.strip():
                 return res.stdout.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Git commit SHA resolution failed: {e}")
         return None
 
     def save_checkpoint(self, model: Any, job_id: str) -> str:
@@ -63,10 +92,11 @@ class CheckpointManager:
         dataset_content: bytes,
         row_count: int,
         column_count: int,
-        random_seed: int = 42,
+        random_seed: Optional[int] = None,
         git_commit: Optional[str] = None,
         job_id: str = "default_job",
     ) -> LineageDTO:
+        resolved_seed = random_seed if random_seed is not None else get_settings().random_state
         """Computes SHA-256 dataset digest and records experiment lineage."""
         dataset_hash = hashlib.sha256(dataset_content).hexdigest()
         checkpoint_path = str(self.checkpoints_dir / f"{job_id}.joblib")
@@ -77,7 +107,7 @@ class CheckpointManager:
             dataset_hash=dataset_hash,
             row_count=row_count,
             column_count=column_count,
-            random_seed=random_seed,
+            random_seed=resolved_seed,
             git_commit=resolved_git_commit,
             checkpoint_path=checkpoint_path,
         )
@@ -107,9 +137,9 @@ class CheckpointManager:
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=3):
-                    pass
-            except Exception:
-                pass
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    _ = resp.read()
+            except Exception as e:
+                logger.warning(f"Lineage webhook dispatch failed: {e}")
 
         return dto

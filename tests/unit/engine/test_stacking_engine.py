@@ -76,3 +76,22 @@ def test_stacking_engine_regression_super_learner_positive_weights():
     final_est = stacking_pipeline.final_estimator_
     assert hasattr(final_est, "coef_")
     assert np.all(final_est.coef_ >= 0)
+
+
+def test_stacking_engine_f1_and_rmse():
+    np.random.seed(42)
+    n = 60
+    X = np.random.normal(0, 1, size=(n, 3))
+    y_c = np.random.binomial(1, 0.5, size=n)
+    y_r = X[:, 0] * 1.5 + np.random.normal(0, 0.1, size=n)
+
+    engine = StackingEngine()
+    # F1 scoring
+    base_clf = [("lr", LogisticRegression())]
+    m_clf, s_f1 = engine.build_stacking_ensemble(base_clf, X, y_c, scoring="f1_weighted", cv_splits=2)
+    assert s_f1 > 0.0
+
+    # RMSE scoring
+    base_reg = [("ridge", Ridge())]
+    m_reg, s_rmse = engine.build_stacking_ensemble(base_reg, X, y_r, task_type="regression", scoring="neg_root_mean_squared_error", cv_splits=2)
+    assert s_rmse <= 0.0

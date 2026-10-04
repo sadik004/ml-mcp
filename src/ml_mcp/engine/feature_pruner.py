@@ -1,7 +1,8 @@
 """OpenFE-inspired Gradient & Tree Importance Feature Pruner with OOF Permutation (Zhang et al. ICML 2023; Breiman 2001; Molnar 2020)."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -25,13 +26,14 @@ class GradientFeatureSelector(BaseEstimator, TransformerMixin):
         importance_threshold: float = 0.005,
         task_type: str = "auto",
         cv: int = 3,
-        random_state: int = 42,
+        random_state: Optional[int] = None,
     ) -> None:
+        from ml_mcp.config import get_settings
         self.top_k = top_k
         self.importance_threshold = importance_threshold
         self.task_type = task_type
         self.cv = cv
-        self.random_state = random_state
+        self.random_state = random_state if random_state is not None else get_settings().random_state
 
         self.selected_features_: List[str] = []
         self.dropped_features_: List[str] = []

@@ -1,0 +1,9 @@
+{
+  "details": "dict",
+  "error_type": "str",
+  "exception_class": "str",
+  "message": "str",
+  "retryable": "bool",
+  "status": "str",
+  "suggestions": "list"
+}

@@ -1,0 +1,7 @@
+{
+  "avg_char_lengths": "dict",
+  "recommended_strategy": "str",
+  "text_columns": "list",
+  "unique_token_counts": "dict",
+  "view": "str"
+}

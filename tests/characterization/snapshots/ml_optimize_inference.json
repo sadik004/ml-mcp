@@ -1,0 +1,6 @@
+{
+  "format": "str",
+  "graph_optimization_level": "str",
+  "p95_latency_ms": "float",
+  "p99_latency_ms": "float"
+}

@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal
+
 import numpy as np
 import pandas as pd
 
@@ -44,7 +45,7 @@ class PreflightAuditor:
     @staticmethod
     def compute_lineage(df: pd.DataFrame) -> Dict[str, Any]:
         """Calculates cryptographic SHA-256 fingerprint, shape, memory footprint, and exact duplicate count."""
-        sample_bytes = pd.util.hash_pandas_object(df, index=True).values.tobytes()
+        sample_bytes = np.asarray(pd.util.hash_pandas_object(df, index=True).values).tobytes()
         sha256 = hashlib.sha256(sample_bytes).hexdigest()
         mem_mb = float(df.memory_usage(deep=True).sum() / (1024 * 1024))
         duplicates = int(df.duplicated().sum())
@@ -114,7 +115,7 @@ class PreflightAuditor:
         constraint_validator = ConstraintValidator()
         try:
             constraint_rep = constraint_validator.validate_constraints(df)
-            violations_count = len(constraint_rep.failed_constraints)
+            violations_count = len(constraint_rep.violations_by_column)
         except Exception:
             violations_count = 0
 
@@ -126,13 +127,14 @@ class PreflightAuditor:
         warnings: List[str] = []
 
         # Target Leakage Penalty
+        valid_chatterjee = [v for v in leakage_rep.chatterjee_scores.values() if v is not None]
         if leakage_rep.has_critical_leakage:
             score -= 40
             leaked_names = ", ".join(leakage_rep.leaked_features[:3])
             critical_red_flags.append(
                 f"CRITICAL TARGET LEAKAGE: Features [{leaked_names}] exhibit anomalous correlation. Must be dropped before Phase 2!"
             )
-        elif len(leakage_rep.chatterjee_scores) > 0 and max(leakage_rep.chatterjee_scores.values(), default=0) > 0.50:
+        elif valid_chatterjee and max(valid_chatterjee) > 0.50:
             score -= 10
             warnings.append("Moderate Target Association: Some features exhibit Chatterjee xi > 0.50.")
 

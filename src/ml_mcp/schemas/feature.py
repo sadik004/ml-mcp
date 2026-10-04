@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import Field
+
 from ml_mcp.schemas.base import BaseDTO
 
 
@@ -34,6 +36,7 @@ class FeaturePipelineReportDTO(BaseDTO):
     preprocessor_artifact_path: Optional[str] = Field(default=None, description="Path to fitted joblib pipeline artifact")
     transformed_dataset_path: Optional[str] = Field(default=None, description="Path to saved transformed CSV dataset artifact")
     receipt_card: str = Field(description="Human-readable Markdown feature receipt card")
+    warnings: List[str] = Field(default_factory=list, description="Warnings or fallback notices")
 
     def to_compact(self) -> Dict[str, Any]:
         return {
@@ -46,5 +49,6 @@ class FeaturePipelineReportDTO(BaseDTO):
             "class_weights": self.class_weights,
             "transformed_dataset_path": self.transformed_dataset_path,
             "receipt_card": self.receipt_card,
+            "warnings": self.warnings,
         }
 

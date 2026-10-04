@@ -1,0 +1,9 @@
+{
+  "collinear_pairs_count": "int",
+  "correlation_cutoff": "float",
+  "dropped_features": "list",
+  "high_vif_features": "list",
+  "processed_csv_path": "str",
+  "remaining_features_count": "int",
+  "vif_threshold": "float"
+}

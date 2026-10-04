@@ -1,19 +1,23 @@
 """FastMCP server initialization and diagnostic health-check tools."""
 from __future__ import annotations
 
+import logging
 import platform
 import sys
 from typing import Any, Dict
+
 from mcp.server.fastmcp import FastMCP
 
 from ml_mcp.config import get_settings
 from ml_mcp.engine.json_sanitizer import sanitize_for_json
+from ml_mcp.tools import register_all_tools
+
+logger = logging.getLogger(__name__)
 
 # Instantiate FastMCP server instance
 mcp = FastMCP("ml.mcp")
 
 # Register the 25 Production Tools
-from ml_mcp.tools import register_all_tools
 register_all_tools(mcp)
 
 
@@ -37,8 +41,8 @@ async def ml_ping() -> Dict[str, Any]:
         if cuda_available:
             cuda_device_count = int(torch.cuda.device_count())
             cuda_device_name = str(torch.cuda.get_device_name(0))
-    except (ImportError, Exception):
-        pass
+    except (ImportError, Exception) as torch_err:
+        logger.debug(f"PyTorch CUDA detection unavailable: {torch_err}")
 
     storage_status = settings.validate_storage()
 

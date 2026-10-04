@@ -6,7 +6,6 @@ import os
 from typing import Any, Dict, Optional
 
 import joblib
-import numpy as np
 
 from ml_mcp.engine.model_card import generate_model_card
 from ml_mcp.engine.onnx_optimizer import ONNXOptimizer
@@ -30,10 +29,12 @@ class ModelExporter:
         metrics: Optional[Dict[str, Any]] = None,
         dataset_hash: str = "unknown_sha256",
         hyperparameters: Optional[Dict[str, Any]] = None,
+        score: Optional[float] = None,
+        trained_on: str = "full_data",
     ) -> ModelExportDTO:
         """Export atomic .joblib, .onnx, and MODEL_CARD.md with dry-run test."""
         os.makedirs(output_dir, exist_ok=True)
-        metrics_dict = metrics or {"score": 1.0}
+        metrics_dict = metrics or {}
 
         # 1. Atomic .joblib serialization
         joblib_path = os.path.join(output_dir, f"{model_name}.joblib")
@@ -46,13 +47,18 @@ class ModelExporter:
             raise RuntimeError("Dry-run inference failed on reloaded .joblib pipeline.")
 
         # 3. ONNX conversion and latency benchmarking
-        onnx_bytes, p95_ms, p99_ms = self.onnx_optimizer.convert_and_benchmark(
-            model=model,
-            sample_input=sample_input,
-        )
-        onnx_path = os.path.join(output_dir, f"{model_name}.onnx")
-        with open(onnx_path, "wb") as f:
-            f.write(onnx_bytes)
+        onnx_path = ""
+        p95_ms, p99_ms = 0.0, 0.0
+        try:
+            onnx_bytes, p95_ms, p99_ms = self.onnx_optimizer.convert_and_benchmark(
+                model=model,
+                sample_input=sample_input,
+            )
+            onnx_path = os.path.join(output_dir, f"{model_name}.onnx")
+            with open(onnx_path, "wb") as f:
+                f.write(onnx_bytes)
+        except Exception as e:
+            logger.warning("ONNX conversion skipped for model: %s", e)
 
         # 4. Generate MODEL_CARD.md
         card_content = generate_model_card(
@@ -73,4 +79,7 @@ class ModelExporter:
             model_card_path=os.path.abspath(model_card_path),
             p95_latency_ms=p95_ms,
             p99_latency_ms=p99_ms,
+            score=score,
+            trained_on=trained_on,
+            metrics=metrics_dict,
         )

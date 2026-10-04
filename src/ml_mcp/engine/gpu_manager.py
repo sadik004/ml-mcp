@@ -1,8 +1,10 @@
 """Hardware GPU acceleration manager with resilient CPU fallback."""
 from __future__ import annotations
 
-import os
+import logging
 from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
 
 
 class GPUManager:
@@ -32,8 +34,8 @@ class GPUManager:
                 import torch
                 device_name = torch.cuda.get_device_name(0)
                 device_count = torch.cuda.device_count()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed querying CUDA device details: {e}")
 
         return {
             "cuda_available": cuda_avail,

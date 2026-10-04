@@ -1,0 +1,5 @@
+{
+  "dashboard_path": "str",
+  "metrics": "dict",
+  "status": "str"
+}

@@ -1,7 +1,8 @@
 """MIT Confident Learning and Out-Of-Fold Residual Dispersion for tabular label noise detection."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
@@ -14,9 +15,10 @@ from ml_mcp.schemas.audit import LabelErrorReportDTO, LabelErrorSampleDTO
 class LabelErrorDetector:
     """Estimates label uncertainty and detects corrupt training labels via Confident Learning and Residual Dispersion."""
 
-    def __init__(self, cv_splits: int = 5, random_state: int = 42) -> None:
+    def __init__(self, cv_splits: int = 5, random_state: Optional[int] = None) -> None:
+        from ml_mcp.config import get_settings
         self.cv_splits = cv_splits
-        self.random_state = random_state
+        self.random_state = random_state if random_state is not None else get_settings().random_state
 
     def detect_label_errors(
         self,

@@ -1,0 +1,9 @@
+{
+  "checkpoint_path": "str",
+  "column_count": "int",
+  "dataset_hash": "str",
+  "git_commit": "str",
+  "random_seed": "int",
+  "row_count": "int",
+  "view": "str"
+}

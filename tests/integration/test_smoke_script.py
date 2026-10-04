@@ -1,5 +1,8 @@
-"""Integration test executing scripts/smoke_test.py via pytest."""
+import os
+import sys
 import pytest
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from scripts.smoke_test import run_smoke_test
 
 

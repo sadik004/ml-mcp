@@ -1,0 +1,10 @@
+{
+  "count": "int",
+  "is_skewed": "bool",
+  "max_value": "float",
+  "method": "str",
+  "min_value": "float",
+  "residual_skewness": "float",
+  "skewness": "float",
+  "transformed_values": "list"
+}

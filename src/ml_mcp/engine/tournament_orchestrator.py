@@ -13,8 +13,8 @@ Honest-validation protocol (Cawley & Talbot, JMLR 2010; Varma & Simon, 2006):
    (outer folds) are saved for downstream calibration / conformal steps in Phase 4.
 """
 from __future__ import annotations
-import json
 
+import json
 import logging
 import os
 import time
@@ -39,6 +39,7 @@ from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import average_precision_score, r2_score, roc_auc_score
 from sklearn.model_selection import KFold, StratifiedKFold
 
+from ml_mcp.config import get_settings
 from ml_mcp.schemas.tournament import TournamentAndTuningReportDTO
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -80,7 +81,8 @@ class TournamentOrchestrator:
         return model.predict(X)
 
     @staticmethod
-    def _splitter(task_type: str, y: np.ndarray, n_splits: int, seed: int = 42):
+    def _splitter(task_type: str, y: np.ndarray, n_splits: int, seed: Optional[int] = None):
+        seed_val = seed if seed is not None else get_settings().random_state
         if task_type == "classification":
             min_class = int(np.bincount(y.astype(int)).min())
             if min_class < n_splits:
@@ -88,11 +90,12 @@ class TournamentOrchestrator:
                     f"Smallest class has {min_class} samples, fewer than n_splits={n_splits}. "
                     "Reduce n_splits or collect more minority samples."
                 )
-            return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-        return KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+            return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed_val)
+        return KFold(n_splits=n_splits, shuffle=True, random_state=seed_val)
 
     @staticmethod
     def _get_candidate_models(task_type: str, class_weights: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+        seed = get_settings().random_state
         if task_type == "classification":
             scale_pos = 1.0
             cw: Optional[Dict[int, float]] = None
@@ -101,34 +104,34 @@ class TournamentOrchestrator:
                 cw = {0: float(class_weights["0"]), 1: float(class_weights["1"])}
 
             models: Dict[str, Any] = {
-                "RandomForest": RandomForestClassifier(n_estimators=80, max_depth=6, random_state=42, n_jobs=-1, class_weight=cw),
-                "ExtraTrees": ExtraTreesClassifier(n_estimators=80, max_depth=6, random_state=42, n_jobs=-1, class_weight=cw),
-                "HistGradientBoosting": HistGradientBoostingClassifier(max_iter=80, random_state=42, class_weight=cw),
-                "LogisticRegression": LogisticRegression(max_iter=300, random_state=42, class_weight=cw),
+                "RandomForest": RandomForestClassifier(n_estimators=80, max_depth=6, random_state=seed, n_jobs=-1, class_weight=cw),
+                "ExtraTrees": ExtraTreesClassifier(n_estimators=80, max_depth=6, random_state=seed, n_jobs=-1, class_weight=cw),
+                "HistGradientBoosting": HistGradientBoostingClassifier(max_iter=80, random_state=seed, class_weight=cw),
+                "LogisticRegression": LogisticRegression(max_iter=300, random_state=seed, class_weight=cw),
             }
             try:
                 import lightgbm as lgb
                 models["LightGBM"] = lgb.LGBMClassifier(
                     n_estimators=100, learning_rate=0.08, scale_pos_weight=scale_pos,
-                    random_state=42, verbose=-1, n_jobs=-1,
+                    random_state=seed, verbose=-1, n_jobs=-1,
                 )
-            except ImportError:
-                pass
+            except ImportError as e:
+                logger.info(f"LightGBM not installed, skipping in classifier candidates: {e}")
             return models
 
         models = {
-            "RandomForest": RandomForestRegressor(n_estimators=80, max_depth=6, random_state=42, n_jobs=-1),
-            "ExtraTrees": ExtraTreesRegressor(n_estimators=80, max_depth=6, random_state=42, n_jobs=-1),
-            "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=80, random_state=42),
+            "RandomForest": RandomForestRegressor(n_estimators=80, max_depth=6, random_state=seed, n_jobs=-1),
+            "ExtraTrees": ExtraTreesRegressor(n_estimators=80, max_depth=6, random_state=seed, n_jobs=-1),
+            "HistGradientBoosting": HistGradientBoostingRegressor(max_iter=80, random_state=seed),
             "Ridge": Ridge(alpha=1.0),
         }
         try:
             import lightgbm as lgb
             models["LightGBM"] = lgb.LGBMRegressor(
-                n_estimators=100, learning_rate=0.08, random_state=42, verbose=-1, n_jobs=-1,
+                n_estimators=100, learning_rate=0.08, random_state=seed, verbose=-1, n_jobs=-1,
             )
-        except ImportError:
-            pass
+        except ImportError as e:
+            logger.info(f"LightGBM not installed, skipping in regressor candidates: {e}")
         return models
 
     @staticmethod
@@ -192,7 +195,7 @@ class TournamentOrchestrator:
 
         study = optuna.create_study(
             direction="maximize",
-            sampler=optuna.samplers.TPESampler(seed=42),
+            sampler=optuna.samplers.TPESampler(seed=get_settings().random_state),
             pruner=optuna.pruners.NopPruner(),
         )
         t0 = time.time()
@@ -209,7 +212,7 @@ class TournamentOrchestrator:
         if task_type == "classification":
             return StackingClassifier(
                 estimators=estimators,
-                final_estimator=LogisticRegression(max_iter=300, random_state=42),
+                final_estimator=LogisticRegression(max_iter=300, random_state=get_settings().random_state),
                 stack_method="predict_proba",
                 cv=INNER_SPLITS,
                 n_jobs=1,
@@ -334,7 +337,7 @@ class TournamentOrchestrator:
                 json.dump({
                     "target_column": getattr(y, "name", "target") or "target",
                     "task_type": task_type,
-                    "champion_architecture": champion_name,
+                    "champion_architecture": champion_arch,
                     "primary_metric": primary_metric,
                 }, tmf, indent=2)
         except Exception as e:

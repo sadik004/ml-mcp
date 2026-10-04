@@ -1,0 +1,8 @@
+{
+  "base_value": "float",
+  "execution_time_seconds": "float",
+  "prediction": "float",
+  "top_negative_drivers": "dict",
+  "top_positive_drivers": "dict",
+  "waterfall_steps": "list"
+}

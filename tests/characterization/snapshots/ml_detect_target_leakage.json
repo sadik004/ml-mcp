@@ -1,0 +1,12 @@
+{
+  "chatterjee_scores": "dict",
+  "correlation_matrix": "dict",
+  "cramers_v_scores": "dict",
+  "has_critical_leakage": "bool",
+  "leaked_features": "list",
+  "mutual_info_scores": "dict",
+  "pps_scores": "dict",
+  "target_column": "str",
+  "view": "str",
+  "warnings": "list"
+}

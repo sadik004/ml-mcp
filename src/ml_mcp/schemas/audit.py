@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import Field
+
 from ml_mcp.schemas.base import BaseDTO
 
 
@@ -73,35 +75,46 @@ class TargetLeakageReportDTO(BaseDTO):
     leaked_features: List[str] = Field(
         default_factory=list, description="Suspicious features exhibiting >=0.95 correlation"
     )
-    correlation_matrix: Dict[str, float] = Field(
+    correlation_matrix: Dict[str, Optional[float]] = Field(
         default_factory=dict, description="Feature correlations with the target"
     )
-    mutual_info_scores: Dict[str, float] = Field(
+    mutual_info_scores: Dict[str, Optional[float]] = Field(
         default_factory=dict, description="Mutual information scores with the target"
     )
-    cramers_v_scores: Dict[str, float] = Field(
+    cramers_v_scores: Dict[str, Optional[float]] = Field(
         default_factory=dict, description="Bias-corrected Cramér's V scores for categorical predictors"
     )
-    chatterjee_scores: Dict[str, float] = Field(
+    chatterjee_scores: Dict[str, Optional[float]] = Field(
         default_factory=dict, description="Chatterjee rank correlation xi scores (JASA 2021)"
     )
-    pps_scores: Dict[str, float] = Field(
+    pps_scores: Dict[str, Optional[float]] = Field(
         default_factory=dict, description="Predictive Power Score single-feature decision tree scores"
     )
     has_critical_leakage: bool = Field(
         default=False, description="True if any feature exceeds leakage threshold"
     )
+    warnings: List[str] = Field(
+        default_factory=list, description="Audit warnings or exceptions caught during leakage evaluation"
+    )
+    view: Literal["compact", "detailed"] = Field(
+        default="detailed", description="Detail level of report"
+    )
 
     def to_compact(self) -> Dict[str, Any]:
-        max_corr = max(self.correlation_matrix.values()) if self.correlation_matrix else 0.0
-        max_v = max(self.cramers_v_scores.values()) if self.cramers_v_scores else 0.0
-        return {
+        valid_corr = [v for v in self.correlation_matrix.values() if v is not None]
+        valid_v = [v for v in self.cramers_v_scores.values() if v is not None]
+        max_corr = max(valid_corr) if valid_corr else 0.0
+        max_v = max(valid_v) if valid_v else 0.0
+        compact: Dict[str, Any] = {
             "target_column": self.target_column,
             "has_critical_leakage": self.has_critical_leakage,
             "leaked_features": self.leaked_features,
             "highest_correlation": round(max_corr, 4),
             "highest_cramers_v": round(max_v, 4),
         }
+        if self.warnings:
+            compact["warnings"] = self.warnings
+        return compact
 
 
 class TextFeatureReportDTO(BaseDTO):

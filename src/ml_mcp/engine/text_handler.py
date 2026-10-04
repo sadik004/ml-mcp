@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
+
 import numpy as np
 import pandas as pd
 
+from ml_mcp.config import get_settings
 from ml_mcp.schemas.audit import TextFeatureReportDTO
 
 
@@ -109,8 +111,8 @@ class TextFeatureHandler:
             return np.asarray(embeddings, dtype=np.float32)
         except Exception:
             # Sub-10ms fallback for MCP / non-GPU environments without torch
-            from sklearn.feature_extraction.text import TfidfVectorizer
             from sklearn.decomposition import TruncatedSVD
+            from sklearn.feature_extraction.text import TfidfVectorizer
 
             tfidf = TfidfVectorizer(max_features=64, sublinear_tf=True)
             X_tfidf = tfidf.fit_transform(cleaned_texts)
@@ -120,6 +122,6 @@ class TextFeatureHandler:
             if comp < 1:
                 return np.zeros((len(cleaned_texts), 1), dtype=np.float32)
 
-            svd = TruncatedSVD(n_components=comp, random_state=42)
+            svd = TruncatedSVD(n_components=comp, random_state=get_settings().random_state)
             dense = svd.fit_transform(X_tfidf)
             return dense.astype(np.float32)

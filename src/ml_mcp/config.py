@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -45,6 +46,42 @@ class Settings(BaseSettings):
     max_json_depth: int = Field(
         default=64,
         description="Safety threshold for JSON recursive sanitization",
+    )
+    random_state: int = Field(
+        default=42,
+        description="Global deterministic seed for cross-validation and splits",
+    )
+    default_alpha: float = Field(
+        default=0.10,
+        description="Default significance level for conformal risk control",
+    )
+    cal_fraction: float = Field(
+        default=0.50,
+        description="Default calibration split fraction",
+    )
+    test_size: float = Field(
+        default=0.30,
+        description="Default held-out test split size",
+    )
+    cv_splits: int = Field(
+        default=5,
+        description="Default cross-validation folds",
+    )
+    min_calibration_n: int = Field(
+        default=20,
+        description="Minimum calibration sample size for valid statistical coverage",
+    )
+    ece_tolerance: float = Field(
+        default=0.10,
+        description="Maximum ECE tolerance to consider model well-calibrated",
+    )
+    holdout_fraction: float = Field(
+        default=0.20,
+        description="Default outer holdout fraction for tournament champion honest scoring",
+    )
+    min_holdout_n: int = Field(
+        default=50,
+        description="Minimum sample size to split off an outer holdout for champion evaluation",
     )
 
     @property

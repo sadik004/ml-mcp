@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,8 @@ class ConformalRiskControlEngine:
 
     def __init__(self, num_grid_points: int = 1001) -> None:
         self.grid = np.linspace(0.0, 1.0, num_grid_points)
+        self.warnings_: List[str] = []
+        self.status_: str = "ok"
 
     def get_prediction_sets(
         self,
@@ -33,8 +36,8 @@ class ConformalRiskControlEngine:
         use_raps: bool = False,
     ) -> List[List[int]]:
         """Construct prediction sets for each sample given threshold(s).
-        
-        Supports standard quantile thresholding or Regularized Adaptive Prediction Sets (RAPS).
+
+        Supports standard quantile thresholding or non-randomized RAPS-like (Regularized Adaptive Prediction Sets).
         """
         probs = np.asarray(probs, dtype=np.float64)
         n_samples, n_classes = probs.shape
@@ -55,7 +58,7 @@ class ConformalRiskControlEngine:
                 sorted_indices = np.argsort(-probs[i])
                 sorted_probs = probs[i][sorted_indices]
                 cum_probs = np.cumsum(sorted_probs)
-                
+
                 # Apply cardinality penalty for ranks beyond k_reg
                 ranks = np.arange(1, n_classes + 1)
                 penalties = lam_reg * np.maximum(0, ranks - k_reg)
@@ -74,6 +77,22 @@ class ConformalRiskControlEngine:
                 prediction_sets.append(sample_set)
 
         return prediction_sets
+
+    def get_raps_like_sets(
+        self,
+        probs: np.ndarray,
+        lambda_val: Union[float, Dict[int, float]],
+        k_reg: int = 2,
+        lam_reg: float = 0.01,
+    ) -> List[List[int]]:
+        """Construct non-randomized RAPS-like prediction sets."""
+        return self.get_prediction_sets(
+            probs=probs,
+            lambda_val=lambda_val,
+            k_reg=k_reg,
+            lam_reg=lam_reg,
+            use_raps=True,
+        )
 
     def evaluate_loss(
         self,
@@ -102,14 +121,22 @@ class ConformalRiskControlEngine:
             for i in range(n):
                 pset = prediction_sets[i]
                 y_i = y_true[i]
+                ambiguous_cost = 0.2 if cost_matrix is None else float(cost_matrix[y_i, -1])
+                correct_singleton_cost = 0.0 if cost_matrix is None else float(cost_matrix[y_i, y_i])
+                if y_i in pset and len(pset) > 1 and ambiguous_cost > correct_singleton_cost:
+                    raise ValueError(
+                        f"loss not monotone in lambda; CRC guarantee invalid: "
+                        f"expanding set to include {pset} for true label {y_i} "
+                        f"increases loss from {correct_singleton_cost} to {ambiguous_cost}"
+                    )
                 if len(pset) == 0:
                     losses[i] = 1.0
                 elif len(pset) > 1:
-                    losses[i] = 0.2 if cost_matrix is None else float(cost_matrix[y_i, -1])
+                    losses[i] = ambiguous_cost
                 else:
                     pred = pset[0]
                     if pred == y_i:
-                        losses[i] = 0.0
+                        losses[i] = correct_singleton_cost
                     else:
                         if cost_matrix is not None:
                             losses[i] = float(cost_matrix[y_i, pred])
@@ -132,11 +159,14 @@ class ConformalRiskControlEngine:
     ) -> Tuple[Union[float, Dict[int, float]], float]:
         """Calibrate lambda to strictly satisfy finite-sample risk guarantee:
             E[loss] <= alpha (target_risk)
-        
+
         Theoretical Basis:
             - Romano et al. (2020) Mondrian Class-Conditional Quantiles.
             - Angelopoulos et al. (2021) RAPS.
         """
+        self.warnings_ = []
+        self.status_ = "feasible"
+
         probs_cal = np.asarray(probs_cal, dtype=np.float64)
         y_cal = np.asarray(y_cal, dtype=int)
         n = len(y_cal)
@@ -150,18 +180,26 @@ class ConformalRiskControlEngine:
             # Mondrian (Class-Conditional) Conformal Prediction (Romano et al. NeurIPS 2020)
             classes = np.unique(y_cal)
             per_class_lambdas: Dict[int, float] = {}
+            min_nc_bound = 1.0 / target_risk - 1.0
 
             for c in classes:
                 mask = (y_cal == c)
                 n_c = int(np.sum(mask))
-                if n_c == 0:
+                if n_c < min_nc_bound or n_c == 0:
+                    self.status_ = "infeasible"
+                    k_val = int(min_nc_bound)
+                    self.warnings_.append(
+                        f"INFEASIBLE: n_c={n_c} < 1/alpha-1={k_val} for class {c}"
+                    )
                     per_class_lambdas[int(c)] = 1.0
-                    continue
+                    if n_c == 0:
+                        continue
 
                 probs_c = probs_cal[mask]
                 y_c = y_cal[mask]
 
                 selected_lam = 1.0
+                found_valid = False
                 for lam in self.grid:
                     psets = self.get_prediction_sets(probs_c, float(lam))
                     l_vals = self.evaluate_loss(psets, y_c, loss_type="misclassification")
@@ -169,7 +207,14 @@ class ConformalRiskControlEngine:
                     corrected_risk = (n_c / (n_c + 1.0)) * r_hat + (B / (n_c + 1.0))
                     if corrected_risk <= target_risk:
                         selected_lam = float(lam)
+                        found_valid = True
                         break
+
+                if not found_valid and n_c >= min_nc_bound:
+                    self.status_ = "infeasible"
+                    self.warnings_.append(
+                        f"INFEASIBLE: target risk {target_risk} cannot be achieved for class {c}"
+                    )
 
                 per_class_lambdas[int(c)] = selected_lam
 
@@ -182,6 +227,8 @@ class ConformalRiskControlEngine:
             pos_mask = (y_cal == 1)
             n_eff = int(np.sum(pos_mask))
             if n_eff == 0:
+                self.status_ = "infeasible"
+                self.warnings_.append("FNR evaluation undefined: 0 positive instances in calibration set")
                 return 1.0, 0.0
             eval_probs = probs_cal[pos_mask]
             eval_y = y_cal[pos_mask]
@@ -190,7 +237,14 @@ class ConformalRiskControlEngine:
             eval_probs = probs_cal
             eval_y = y_cal
 
+        min_neff_bound = 1.0 / target_risk - 1.0
+        if n_eff < min_neff_bound:
+            self.status_ = "infeasible"
+            k_val = int(min_neff_bound)
+            self.warnings_.append(f"INFEASIBLE: n_eff={n_eff} < 1/alpha-1={k_val}")
+
         selected_lambda = 1.0
+        found_marginal_valid = False
         for lam in self.grid:
             psets = self.get_prediction_sets(eval_probs, float(lam), use_raps=use_raps)
             l_vals = self.evaluate_loss(psets, eval_y, loss_type=loss_type, cost_matrix=cost_matrix)
@@ -199,7 +253,12 @@ class ConformalRiskControlEngine:
 
             if corrected_risk <= target_risk:
                 selected_lambda = float(lam)
+                found_marginal_valid = True
                 break
+
+        if not found_marginal_valid and n_eff >= min_neff_bound:
+            self.status_ = "infeasible"
+            self.warnings_.append(f"INFEASIBLE: target risk {target_risk} cannot be achieved on calibration set")
 
         full_psets = self.get_prediction_sets(probs_cal, selected_lambda, use_raps=use_raps)
         if loss_type == "fnr":
